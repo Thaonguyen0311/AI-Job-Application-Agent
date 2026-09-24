@@ -79,7 +79,7 @@ Application tracking
 Preference learning
 Dashboard and analytics
 Testing and documentation
----
+
 ## 5. Architecture Draft
 
                     ┌──────────────────────┐
