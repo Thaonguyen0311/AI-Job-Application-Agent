@@ -58,6 +58,8 @@ The MVP should include:
 Automatic daily application can be treated as an additional feature after the core MVP is working.
 
 The existing project already provides a demo/seed mode that simulates applications without interacting with third-party websites, making it suitable for a controlled course demonstration.
+---
+
 ## 4. Project Board
 Tool: GitHub Projects
 
@@ -79,6 +81,8 @@ Application tracking
 Preference learning
 Dashboard and analytics
 Testing and documentation
+
+---
 
 ## 5. Architecture Draft
 
