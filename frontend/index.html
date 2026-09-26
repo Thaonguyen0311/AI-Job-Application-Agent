@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>JobQuest — your job-hunt copilot</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='24' fill='%236C5CE7'/><rect x='30' y='30' width='16' height='16' rx='5' fill='%23C9F24A'/></svg>">
+<link rel="stylesheet" href="css/style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js" defer></script>
+</head>
+<body>
+
+<!-- ============ AUTH ============ -->
+<div id="auth">
+  <div class="auth-hero">
+    <div class="ring-motif">
+      <div class="ring lime r1"></div><div class="ring r2"></div><div class="ring lime r3"></div>
+    </div>
+    <div class="brand"><span class="brand-dot"></span> JobQuest</div>
+    <div class="hero-mid">
+      <h1>Land the internship without the busywork.</h1>
+      <p>Fill your profile once. JobQuest tailors a fresh CV for every role, scores your fit, and tracks every application in one place.</p>
+      <div class="hero-rotator" id="rotator">Built for <span>students</span>.</div>
+    </div>
+    <div class="hero-foot">No spam. No email verification. Just your job hunt, organised.</div>
+  </div>
+
+  <div class="auth-panel">
+    <!-- Login -->
+    <div class="auth-card" id="view-login">
+      <h2>Welcome back</h2>
+      <p class="auth-sub">Sign in to pick up where you left off.</p>
+      <div class="field"><label>Username</label><input class="input" id="login-username" autocomplete="username"></div>
+      <div class="field"><label>Password</label><input class="input" id="login-password" type="password" autocomplete="current-password"></div>
+      <button class="btn btn-primary btn-block" id="btn-login">Sign in</button>
+      <div class="form-msg" id="login-msg"></div>
+      <div class="auth-switch"><a data-go="forgot">Forgot password?</a></div>
+      <div class="auth-switch">New here? <a data-go="register">Create an account</a></div>
+    </div>
+
+    <!-- Register -->
+    <div class="auth-card hidden" id="view-register">
+      <h2>Create your account</h2>
+      <p class="auth-sub">Username and password — that's it.</p>
+      <div class="field"><label>Username</label><input class="input" id="reg-username" autocomplete="username"></div>
+      <div class="field"><label>Password</label><input class="input" id="reg-password" type="password" autocomplete="new-password"><div class="hint">At least 6 characters.</div></div>
+      <div class="field"><label>Security question</label><input class="input" id="reg-question" placeholder="e.g. What was your first pet's name?"></div>
+      <div class="field"><label>Answer</label><input class="input" id="reg-answer"><div class="hint">You'll need this to reset your password later.</div></div>
+      <button class="btn btn-primary btn-block" id="btn-register">Create account</button>
+      <div class="form-msg" id="reg-msg"></div>
+      <div class="auth-switch">Already have an account? <a data-go="login">Sign in</a></div>
+    </div>
+
+    <!-- Forgot -->
+    <div class="auth-card hidden" id="view-forgot">
+      <h2>Reset password</h2>
+      <p class="auth-sub">Answer your security question to set a new password.</p>
+      <div class="field"><label>Username</label><input class="input" id="fg-username"></div>
+      <button class="btn btn-ghost btn-block" id="btn-fg-start">Find my question</button>
+      <div id="fg-step2" class="hidden" style="margin-top:16px">
+        <div class="field"><label id="fg-question-label">Security question</label><input class="input" id="fg-answer" placeholder="Your answer"></div>
+        <div class="field"><label>New password</label><input class="input" id="fg-newpass" type="password"></div>
+        <button class="btn btn-primary btn-block" id="btn-fg-reset">Set new password</button>
+      </div>
+      <div class="form-msg" id="fg-msg"></div>
+      <div class="auth-switch"><a data-go="login">Back to sign in</a></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ ONBOARDING ============ -->
+<div id="onboarding">
+  <div class="onb-wrap">
+    <div class="onb-brand"><span class="brand-dot"></span> JobQuest</div>
+    <div style="text-align:center;color:var(--muted);font-size:14px">Let's set up your profile so we can build tailored CVs and find the right jobs.</div>
+    <div class="onb-steps"><span class="onb-dot on" data-d="0"></span><span class="onb-dot" data-d="1"></span><span class="onb-dot" data-d="2"></span></div>
+
+    <div class="onb-card">
+      <!-- Step 1 -->
+      <div class="onb-panel on" data-panel="0">
+        <h2>About you</h2>
+        <p class="lead">The basics that appear at the top of your CV.</p>
+        <div class="profile-grid">
+          <div class="field"><label>Full name *</label><input class="input" id="onb-full_name"></div>
+          <div class="field"><label>Email *</label><input class="input" id="onb-email"></div>
+          <div class="field"><label>Phone</label><input class="input" id="onb-phone"></div>
+          <div class="field"><label>Your location</label><input class="input" id="onb-location" placeholder="e.g. Berlin, Germany"></div>
+          <div class="field"><label>LinkedIn username</label><input class="input" id="onb-linkedin"></div>
+          <div class="field"><label>GitHub username</label><input class="input" id="onb-github"></div>
+        </div>
+        <div class="onb-nav"><span></span><button class="btn btn-primary" data-next="1">Continue</button></div>
+      </div>
+
+      <!-- Step 2 -->
+      <div class="onb-panel" data-panel="1">
+        <h2>Education & skills</h2>
+        <p class="lead">Used to score jobs and fill your CV.</p>
+        <div class="profile-grid">
+          <div class="field"><label>University</label><input class="input" id="onb-university"></div>
+          <div class="field"><label>Degree</label><input class="input" id="onb-degree" placeholder="e.g. BSc Computer Science"></div>
+          <div class="field"><label>Graduation year</label><input class="input" id="onb-graduation_year"></div>
+          <div class="field"><label>GPA (optional)</label><input class="input" id="onb-gpa"></div>
+        </div>
+        <div class="field"><label>Skills *</label>
+          <div class="tag-input-wrap" id="onb-skills"><input placeholder="e.g. Python" data-taginput></div>
+          <div class="hint">Type a skill and press Enter. Add a handful.</div></div>
+        <div class="field"><label>Languages</label>
+          <div class="tag-input-wrap" id="onb-languages"><input placeholder="e.g. English (fluent)" data-taginput></div>
+          <div class="hint">Press Enter after each language.</div></div>
+        <div class="field"><label>Short summary</label><textarea class="input" id="onb-summary" placeholder="A sentence about you and what you're looking for."></textarea></div>
+        <div class="onb-nav"><button class="btn btn-ghost" data-prev="0">Back</button><button class="btn btn-primary" data-next="2">Continue</button></div>
+      </div>
+
+      <!-- Step 3 -->
+      <div class="onb-panel" data-panel="2">
+        <h2>What are you looking for?</h2>
+        <p class="lead">We use these to match and to scope automatic applications.</p>
+        <div class="field"><label>Preferred roles</label>
+          <div class="tag-input-wrap" id="onb-preferred_roles"><input placeholder="e.g. Frontend Developer Intern" data-taginput></div>
+          <div class="hint">Press Enter to add each role.</div></div>
+        <div class="field"><label>Preferred locations / countries</label>
+          <div class="tag-input-wrap" id="onb-preferred_locations"><input placeholder="e.g. Remote, Germany" data-taginput></div>
+          <div class="hint">Add "Remote" if you're open to remote work.</div></div>
+        <div class="field"><label>Most recent experience (optional)</label>
+          <div class="profile-grid">
+            <input class="input" id="onb-exp-title" placeholder="Title (e.g. Web Dev Volunteer)">
+            <input class="input" id="onb-exp-org" placeholder="Organisation">
+          </div>
+          <textarea class="input" id="onb-exp-bullets" style="margin-top:10px" placeholder="One highlight per line (optional)"></textarea>
+        </div>
+        <div class="onb-nav"><button class="btn btn-ghost" data-prev="1">Back</button><button class="btn btn-lime" id="onb-finish">Finish & explore jobs →</button></div>
+        <div class="form-msg" id="onb-msg"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ APP ============ -->
+<div id="app">
+  <div class="mobile-top">
+    <div class="brand"><span class="brand-dot"></span> JobQuest</div>
+    <button class="hamb" id="hamb">☰</button>
+  </div>
+  <div class="scrim" id="scrim"></div>
+
+  <div class="shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand"><span class="brand-dot"></span> JobQuest</div>
+      <button class="nav-item active" data-nav="dashboard">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+        Dashboard</button>
+      <button class="nav-item" data-nav="jobs">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        Find jobs</button>
+      <button class="nav-item" data-nav="applications">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9"/></svg>
+        Applications</button>
+      <button class="nav-item" data-nav="autopilot">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4"/><path d="M12 18v4"/><path d="M4.9 4.9l2.8 2.8"/><path d="M16.3 16.3l2.8 2.8"/><path d="M2 12h4"/><path d="M18 12h4"/><circle cx="12" cy="12" r="3.2"/></svg>
+        Autopilot</button>
+      <button class="nav-item" data-nav="profile">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+        My profile</button>
+
+      <div class="sidebar-foot">
+        <button class="btn btn-ghost btn-sm btn-block" id="btn-tour" style="margin-bottom:8px">💡 Take a tour</button>
+        <div class="user-chip"><div class="avatar" id="side-avatar">A</div><span id="side-username">student</span></div>
+        <button class="btn btn-ghost btn-sm btn-block" id="btn-logout">Sign out</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <!-- Dashboard -->
+      <section class="view" id="page-dashboard">
+        <div class="view-head"><div><h1>Dashboard</h1><div class="sub">Your job hunt at a glance.</div></div>
+          <button class="btn btn-lime" id="btn-quick-auto">⚡ Auto-apply to top matches</button></div>
+        <div id="dash-content" class="center-load"><div class="spinner dark"></div></div>
+      </section>
+
+      <!-- Jobs -->
+      <section class="view hidden" id="page-jobs">
+        <div class="view-head"><div><h1>Find jobs</h1><div class="sub">Ranked by how well they fit your profile.</div></div>
+          <button class="btn btn-ghost btn-sm" id="btn-refresh-jobs">↻ Refresh feed</button></div>
+        <div class="toolbar">
+          <input class="input" id="job-search" placeholder="Search title, company, skill…">
+          <select class="input" id="job-country" style="max-width:190px"><option value="all">All countries</option></select>
+          <select class="input" id="job-source" style="max-width:170px"><option value="all">All sources</option></select>
+          <select class="input" id="job-minscore" style="max-width:160px">
+            <option value="0">Any match</option><option value="40">40%+ match</option>
+            <option value="60">60%+ match</option><option value="75">75%+ match</option>
+          </select>
+          <button class="btn btn-lime btn-sm" id="btn-auto-open">⚡ Auto-apply</button>
+        </div>
+        <div class="filter-note" id="jobs-note"></div>
+        <div id="jobs-content" class="center-load"><div class="spinner dark"></div></div>
+      </section>
+
+      <!-- Applications -->
+      <section class="view hidden" id="page-applications">
+        <div class="view-head"><div><h1>Applications</h1><div class="sub">Update a status any time — JobQuest learns from it.</div></div></div>
+        <div id="apps-content" class="center-load"><div class="spinner dark"></div></div>
+      </section>
+
+      <!-- Autopilot -->
+      <section class="view hidden" id="page-autopilot">
+        <div class="view-head"><div><h1>Autopilot</h1><div class="sub">Let JobQuest apply for you automatically, every day.</div></div>
+          <button class="btn btn-lime" id="btn-run-now">⚡ Run now</button></div>
+        <div id="autopilot-content" class="center-load"><div class="spinner dark"></div></div>
+      </section>
+
+      <!-- Profile -->
+      <section class="view hidden" id="page-profile">
+        <div class="view-head"><div><h1>My profile</h1><div class="sub">The raw material for every CV and cover letter.</div></div>
+          <button class="btn btn-primary" id="btn-save-profile">Save profile</button></div>
+        <div class="card" style="margin-bottom:16px">
+          <div class="completeness"><div class="bar"><i id="comp-bar" style="width:0%"></i></div>
+            <b id="comp-pct" style="font-family:var(--font-display)">0%</b></div>
+          <div class="hint" id="comp-missing"></div>
+        </div>
+        <div id="profile-form"></div>
+        <div style="margin-top:18px;text-align:right">
+          <button class="btn btn-primary" id="btn-save-profile-2">Save profile</button>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<!-- ============ MODAL ============ -->
+<div class="modal-back" id="modal-back">
+  <div class="modal">
+    <div class="modal-head"><h3 id="modal-title">Details</h3><button class="modal-x" id="modal-x">×</button></div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<div id="toasts"></div>
+
+<!-- ============ GUIDED TOUR ============ -->
+<div id="tour-overlay">
+  <div id="tour-hole"></div>
+  <div id="tour-pop">
+    <div class="tour-step-count" id="tour-count"></div>
+    <div class="tour-title" id="tour-title"></div>
+    <div class="tour-body" id="tour-body"></div>
+    <div class="tour-actions">
+      <button class="tour-skip" id="tour-skip">Skip tour</button>
+      <div class="tour-nav">
+        <button class="btn btn-ghost btn-sm" id="tour-back">Back</button>
+        <button class="btn btn-primary btn-sm" id="tour-next">Next</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="js/app.js"></script>
+</body>
+</html>

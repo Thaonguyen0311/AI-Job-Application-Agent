@@ -1,0 +1,31 @@
+services:
+  backend:
+    build: ./backend
+    container_name: jobquest-backend
+    environment:
+      # Override any setting from backend/app/config.py here.
+      SECRET_KEY: "please-change-this-to-a-long-random-string"
+      DATABASE_URL: "sqlite:////data/jobquest.db"
+      APPLY_MODE: "demo"        # demo | live
+      JOB_SOURCE: "seed"        # seed | live
+      # GOOGLE_API_KEY: ""      # add a Gemini key to enable real AI generation
+      # GEMINI_MODEL: "gemini-2.0-flash"
+    volumes:
+      - jobquest-data:/data
+    expose:
+      - "8000"
+    ports:
+      - "8000:8000"             # optional: hit the API directly for debugging
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    container_name: jobquest-frontend
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+
+volumes:
+  jobquest-data:

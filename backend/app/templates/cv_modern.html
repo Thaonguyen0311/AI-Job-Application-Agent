@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  @page { size: A4; margin: 14mm 16mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+         color: #222; font-size: 10.3pt; line-height: 1.4; }
+
+  header { text-align: center; margin-bottom: 6px; }
+  .name { font-size: 22pt; font-weight: 700; letter-spacing: .3px; color: #1a1a1a; }
+  .headline { font-size: 10.5pt; color: #4b3bc7; font-weight: 600; margin-top: 2px; }
+  .contact { font-size: 9pt; color: #555; margin-top: 6px; }
+  .sep { color: #bbb; margin: 0 6px; }
+
+  section { margin-top: 13px; }
+  h2 { font-size: 9.5pt; font-weight: 700; letter-spacing: 1.3px; text-transform: uppercase;
+       color: #4b3bc7; border-bottom: 2px solid #e4e1f7; padding-bottom: 3px; margin-bottom: 6px; }
+
+  .summary { text-align: justify; color: #333; }
+  .skill-row { margin-bottom: 3px; color: #333; }
+  .skill-row .cat { font-weight: 700; color: #1a1a1a; }
+
+  .entry { margin-bottom: 8px; }
+  .entry:last-child { margin-bottom: 0; }
+  .entry-head { display: flex; justify-content: space-between; align-items: baseline; }
+  .entry-title { font-weight: 700; font-size: 10.4pt; color: #1a1a1a; }
+  .entry-org { font-weight: 600; color: #4b3bc7; }
+  .entry-dates { font-size: 9pt; color: #666; white-space: nowrap; padding-left: 12px; }
+  ul { list-style: none; margin-top: 3px; }
+  li { position: relative; padding-left: 13px; margin-bottom: 2px; color: #333; }
+  li::before { content: "▪"; position: absolute; left: 2px; color: #4b3bc7; font-size: 8pt; top: 1px; }
+  .edu-sub { color: #555; font-size: 9.5pt; }
+  .inline-list { color: #333; }
+</style>
+</head>
+<body>
+
+  <header>
+    <div class="name">{{ p.full_name or "Your Name" }}</div>
+    {% if headline %}<div class="headline">{{ headline }}</div>{% endif %}
+    <div class="contact">
+      {% set items = [] %}
+      {% if p.location %}{% set _ = items.append(p.location) %}{% endif %}
+      {% if p.phone %}{% set _ = items.append(p.phone) %}{% endif %}
+      {% if p.email %}{% set _ = items.append(p.email) %}{% endif %}
+      {% if p.linkedin %}{% set _ = items.append("linkedin.com/in/" ~ p.linkedin) %}{% endif %}
+      {% if p.github %}{% set _ = items.append("github.com/" ~ p.github) %}{% endif %}
+      {% for it in items %}{{ it }}{% if not loop.last %}<span class="sep">|</span>{% endif %}{% endfor %}
+    </div>
+  </header>
+
+  {% if summary %}
+  <section><h2>Professional Summary</h2><p class="summary">{{ summary }}</p></section>
+  {% endif %}
+
+  {% if skill_groups %}
+  <section>
+    <h2>Core Skills</h2>
+    {% for g in skill_groups %}
+      <div class="skill-row">{% if g.label %}<span class="cat">{{ g.label }}:</span> {% endif %}{{ g.skills | join(", ") }}</div>
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  {% if p.experience %}
+  <section>
+    <h2>Professional Experience</h2>
+    {% for e in p.experience %}
+    <div class="entry">
+      <div class="entry-head">
+        <div><span class="entry-title">{{ e.title }}</span>{% if e.org %}<span class="entry-org">, {{ e.org }}</span>{% endif %}</div>
+        {% if e.dates %}<div class="entry-dates">{{ e.dates }}</div>{% endif %}
+      </div>
+      {% if e.bullets %}<ul>{% for b in e.bullets %}<li>{{ b }}</li>{% endfor %}</ul>{% endif %}
+    </div>
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  {% if p.university %}
+  <section>
+    <h2>Education</h2>
+    <div class="entry">
+      <div class="entry-head">
+        <div><span class="entry-title">{{ p.university }}</span>{% if p.degree %}<span class="entry-org"> — {{ p.degree }}</span>{% endif %}</div>
+        {% if p.graduation_year %}<div class="entry-dates">{{ p.graduation_year }}</div>{% endif %}
+      </div>
+      {% if p.gpa %}<div class="edu-sub">GPA: {{ p.gpa }}</div>{% endif %}
+    </div>
+  </section>
+  {% endif %}
+
+  {% if p.projects %}
+  <section>
+    <h2>Projects &amp; Achievements</h2>
+    {% for pr in p.projects %}
+    <div class="entry">
+      <div class="entry-head">
+        <div><span class="entry-title">{{ pr.name }}</span></div>
+        {% if pr.dates %}<div class="entry-dates">{{ pr.dates }}</div>{% endif %}
+      </div>
+      {% if pr.bullets %}<ul>{% for b in pr.bullets %}<li>{{ b }}</li>{% endfor %}</ul>{% endif %}
+    </div>
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  {% if p.languages %}
+  <section><h2>Languages</h2><div class="inline-list">{{ p.languages | join("  ·  ") }}</div></section>
+  {% endif %}
+
+  {% if p.hobbies %}
+  <section><h2>Interests</h2><div class="inline-list">{{ p.hobbies | join("  ·  ") }}</div></section>
+  {% endif %}
+
+</body>
+</html>
