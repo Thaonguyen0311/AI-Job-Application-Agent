@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  @page { size: A4; margin: 20mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Helvetica Neue", Arial, sans-serif; color: #1c1c28;
+         font-size: 10.8pt; line-height: 1.5; }
+  .head { margin-bottom: 14px; }
+  .name { font-size: 15pt; font-weight: 800; color: #4b3bc7; }
+  .contact { font-size: 9.3pt; color: #555; margin-top: 2px; }
+  .date { margin: 12px 0; color: #555; font-size: 9.5pt; }
+  p { margin: 0 0 10px; }
+  .sign { margin-top: 16px; }
+</style>
+</head>
+<body>
+  <div class="head">
+    <div class="name">{{ p.full_name or "Your Name" }}</div>
+    <div class="contact">{{ [p.email, p.phone, p.location] | select | join("  ·  ") }}</div>
+  </div>
+  <div class="date">{{ today }}</div>
+  <p>Dear Hiring Team at {{ job.company or "your company" }},</p>
+  {% for para in paragraphs %}<p>{{ para }}</p>{% endfor %}
+  <div class="sign">
+    <p>Sincerely,<br>{{ p.full_name or "Your Name" }}</p>
+  </div>
+</body>
+</html>

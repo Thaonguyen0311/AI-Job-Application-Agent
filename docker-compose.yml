@@ -1,0 +1,34 @@
+services:
+  backend:
+    build: ./backend
+    container_name: jobquest-backend
+    environment:
+      # Override any setting from backend/app/config.py here.
+      SECRET_KEY: ${SECRET_KEY:?Set a unique SECRET_KEY in the root .env file}
+      DATABASE_URL: "sqlite:////data/jobquest.db"
+      APPLY_MODE: "demo"        # demo | live
+      JOB_SOURCE: "seed"        # seed | live
+      AI_PROVIDER: ${AI_PROVIDER:-ollama}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:3b}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      # GEMINI_MODEL: "gemini-2.0-flash"
+    volumes:
+      - jobquest-data:/data
+    expose:
+      - "8000"
+    ports:
+      - "8000:8000"             # optional: hit the API directly for debugging
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    container_name: jobquest-frontend
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+
+volumes:
+  jobquest-data:
