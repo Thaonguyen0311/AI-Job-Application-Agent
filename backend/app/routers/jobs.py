@@ -1,4 +1,10 @@
-"""Job ingestion + scored matching against the current user's profile."""
+"""Job ingestion + scored matching against the current user's profile.
+
+Only jobs that can be applied to via a direct form (apply_type == 'form') are
+surfaced. Jobs that require logging into an employer portal (apply_type ==
+'external') are never shown or applied to — they are counted and reported so the
+user knows why they were hidden.
+"""
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
@@ -12,6 +18,9 @@ from ..services.jobs_service import ingest as _ingest
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
+APPLYABLE = "form"
+
+
 def _ensure_jobs(db: Session):
     if db.query(Job).count() == 0:
         _ingest(db)
@@ -20,26 +29,26 @@ def _ensure_jobs(db: Session):
 @router.post("/refresh")
 def refresh(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     added = _ingest(db)
-    total = db.query(Job).count()
-    return {"added": added, "total": total}
+    total = db.query(Job).filter(Job.apply_type == APPLYABLE).count()
+    return {"added": added, "total_applyable": total}
 
 
 @router.get("/meta")
 def meta(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Sources, countries and counts by application method."""
+    """Sources, countries and how many jobs were hidden for requiring a login."""
     _ensure_jobs(db)
     jobs = db.query(Job).all()
+    form_jobs = [j for j in jobs if j.apply_type == APPLYABLE]
     sources = {}
-    for j in jobs:
+    for j in form_jobs:
         sources[j.source] = sources.get(j.source, 0) + 1
-    countries = sorted({j.country for j in jobs if j.country})
-    external = sum(1 for j in jobs if j.apply_type != "form")
+    countries = sorted({j.country for j in form_jobs if j.country})
+    hidden = sum(1 for j in jobs if j.apply_type != APPLYABLE)
     return {
         "sources": [{"name": k, "count": v} for k, v in sorted(sources.items())],
         "countries": countries,
-        "total_count": len(jobs),
-        "applyable_count": len(jobs) - external,
-        "external_count": external,
+        "applyable_count": len(form_jobs),
+        "hidden_login_required": hidden,
     }
 
 
@@ -53,8 +62,8 @@ def matches(q: str | None = None, min_score: float = 0.0, country: str | None = 
     applied_ids = {a.job_id for a in
                    db.query(Application).filter(Application.user_id == user.id).all()}
 
-    # Return all posts; application eligibility is exposed via apply_type.
-    query = db.query(Job)
+    # Only directly-applyable (form) jobs are ever considered.
+    query = db.query(Job).filter(Job.apply_type == APPLYABLE)
     if country and country != "all":
         query = query.filter(Job.country == country)
     if source and source != "all":

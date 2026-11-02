@@ -214,10 +214,6 @@ textarea.input { resize: vertical; min-height: 84px; }
 .job-card:hover { border-color: #d6d2ee; box-shadow: var(--shadow-sm); }
 .job-main { flex: 1; min-width: 0; }
 .job-title { font-family: var(--font-display); font-weight: 700; font-size: 16px; }
-.job-title-link { color: inherit; text-decoration: none; }
-.job-title-link[href]:hover { color: var(--violet); text-decoration: underline; }
-.job-apply-status { margin-top: 8px; color: var(--st_in_review, #8a5a00); font-size: 12px; font-weight: 600; }
-.job-external-badge { color: var(--muted); font-size: 12px; font-weight: 600; white-space: nowrap; }
 .job-meta { font-size: 13px; color: var(--muted); margin: 3px 0 8px; }
 .job-skills { display: flex; flex-wrap: wrap; gap: 6px; }
 .skill-tag { font-size: 12px; padding: 3px 9px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--line); }

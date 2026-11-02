@@ -222,8 +222,8 @@ const TOUR_STEPS = [
     title: "3. Filter your way",
     body: "Narrow the list by country, source (LinkedIn, Indeed, company sites), and minimum match score." },
   { page: "jobs", target: "#jobs-note",
-    title: "4. Application options",
-    body: "All jobs are shown. Posts that need an employer-portal login are marked, and their title links to the original listing so you can read the details and apply there yourself." },
+    title: "4. Only jobs you can actually apply to",
+    body: "JobQuest shows jobs with a direct application form. Jobs needing an employer-portal login are hidden and never auto-applied to — the count is shown here." },
   { page: "jobs", target: ".job-card", scrollTo: true,
     title: "5. Read a job card",
     body: "Each card shows the source badge, the country, the skills you match, and your personal match score in the ring." },
@@ -475,15 +475,8 @@ function populateJobFilters(meta) {
 function renderJobsNote(meta, showing) {
   const sources = meta.sources.map(s => s.name).join(', ');
   $('#jobs-note').innerHTML =
-    `Showing <b>${showing}</b> job post${showing === 1 ? '' : 's'} from ${esc(sources)}.` +
-    (meta.external_count ? ` <span class="lock">🔒 ${meta.external_count} require applying through the employer portal. Open a job title to read the listing and apply there.</span>` : '');
-}
-
-function safeJobUrl(value) {
-  try {
-    const url = new URL(value);
-    return ['http:', 'https:'].includes(url.protocol) ? url.href : '';
-  } catch { return ''; }
+    `Showing <b>${showing}</b> directly-applyable job${showing === 1 ? '' : 's'} from ${esc(sources)}.` +
+    (meta.hidden_login_required ? ` <span class="lock">🔒 ${meta.hidden_login_required} hidden — they require signing into an employer portal, so JobQuest won't apply to them.</span>` : '');
 }
 
 function srcClass(source) {
@@ -502,25 +495,15 @@ function renderJobs(jobs) {
     const c = el('div', 'job-card');
     const matched = j.matched_skills.map(s => `<span class="skill-tag match">${esc(s)}</span>`).join('');
     const missing = j.missing_skills.slice(0, 4).map(s => `<span class="skill-tag miss">${esc(s)}</span>`).join('');
-    const jobUrl = safeJobUrl(j.url);
-    const title = jobUrl
-      ? `<a class="job-title-link" href="${esc(jobUrl)}" target="_blank" rel="noopener noreferrer">${esc(j.title)} <span aria-hidden="true">↗</span></a>`
-      : `<span class="job-title-link">${esc(j.title)}</span>`;
-    const applicationStatus = j.apply_type === 'form'
-      ? ''
-      : '<div class="job-apply-status">Employer portal required · apply on the job site</div>';
     c.innerHTML = `
       <div class="ring-score big ${ringClass(j.match_score)}" style="--p:0" data-p="${j.match_score}"><span>${Math.round(j.match_score)}</span></div>
       <div class="job-main">
-        <div class="job-title">${title}</div>
+        <div class="job-title">${esc(j.title)}</div>
         <div class="job-meta"><span class="src-badge ${srcClass(j.source)}">${esc(j.source)}</span> · ${esc(j.company)} · <span class="country">${esc(j.country || j.location)}</span> ${j.remote ? '<span class="tag-remote">Remote</span>' : ''} ${j.requires_cover_letter ? '· <span class="badge-cover">✍ cover letter</span>' : ''}</div>
         <div class="job-skills">${matched}${missing}</div>
-        ${applicationStatus}
       </div>
       <div class="job-actions">
-        ${j.apply_type !== 'form'
-          ? '<span class="job-external-badge">Employer site</span>'
-          : j.already_applied
+        ${j.already_applied
           ? '<button class="btn btn-ghost btn-sm" disabled>✓ Applied</button>'
           : `<button class="btn btn-primary btn-sm" data-review="${j.id}">Review &amp; apply</button>`}
       </div>`;
@@ -622,7 +605,7 @@ function openAutoApply() {
   const isPref = c => pref.some(p => p.toLowerCase() === c.toLowerCase());
   const node = el('div');
   node.innerHTML = `
-    <p class="hint">JobQuest scores every un-applied job and applies to the strongest matches with a direct application form, generating a cover letter automatically wherever the role needs one. Portal-required jobs stay visible in the feed and can be opened to apply on the employer site.</p>
+    <p class="hint">JobQuest scores every un-applied job and applies to the strongest matches, generating a cover letter automatically wherever the role needs one. Only directly-applyable jobs are included.</p>
     <div class="field"><label>Only apply to jobs above this match score</label>
       <select class="input" id="aa-min"><option value="40">40%+</option><option value="50">50%+</option><option value="60" selected>60%+</option><option value="75">75%+</option></select></div>
     <div class="field"><label>Countries to apply in ${pref.length ? '<span class="hint">(your preferences are pre-selected)</span>' : ''}</label>
