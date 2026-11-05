@@ -23,15 +23,18 @@ function toast(msg, kind = '') {
 }
 
 async function api(path, { method = 'GET', body, auth = true, form = false } = {}) {
+  const requestToken = state.token;
   const headers = {};
   if (auth && state.token) headers['Authorization'] = 'Bearer ' + state.token;
   let payload;
   if (form) { payload = new URLSearchParams(body); headers['Content-Type'] = 'application/x-www-form-urlencoded'; }
   else if (body !== undefined) { payload = JSON.stringify(body); headers['Content-Type'] = 'application/json'; }
   const res = await fetch(API + path, { method, headers, body: payload });
+  if (auth && requestToken !== state.token) throw new Error('Session changed. Please retry.');
   if (res.status === 401 && auth) { logout(); throw new Error('Session expired. Please sign in.'); }
   const ct = res.headers.get('content-type') || '';
   const data = ct.includes('json') ? await res.json() : await res.text();
+  if (auth && requestToken !== state.token) throw new Error('Session changed. Please retry.');
   if (!res.ok) throw new Error((data && data.detail) || 'Something went wrong.');
   return data;
 }
@@ -96,6 +99,17 @@ function saveSession(d) {
 }
 function logout() {
   state.token = state.username = null; state.profile = null; jobMeta = null;
+  jobsCache = [];
+  Object.keys(pageCache).forEach(key => { pageCache[key] = null; });
+  jobsRequestId++;
+  clearTimeout(searchTimer);
+  clearTimeout(tourTimer);
+  endTour();
+  closeModal();
+  $('#modal-body').replaceChildren();
+  $('#profile-form').replaceChildren();
+  Object.values(state.charts).forEach(chart => chart.destroy());
+  state.charts = {};
   localStorage.removeItem('jq_token'); localStorage.removeItem('jq_user');
   $('#app').style.display = 'none'; $('#onboarding').classList.remove('show');
   $('#auth').style.display = 'grid';
@@ -106,15 +120,21 @@ $('#btn-logout').onclick = logout;
    NAV / SHELL
    ============================================================ */
 function enterApp() {
+  const token = state.token;
   $('#auth').style.display = 'none';
   $('#side-username').textContent = state.username;
   $('#side-avatar').textContent = (state.username || 'S')[0].toUpperCase();
   // First-time users must complete onboarding before the app.
   api('/profile').then(p => {
+    if (state.token !== token) return;
     state.profile = p;
     if (!p.onboarded) { showOnboarding(); }
     else { finalizeEnterApp(); }
-  }).catch(() => finalizeEnterApp());
+  }).catch(e => {
+    if (state.token !== token) return;
+    logout();
+    setMsg('login-msg', e.message);
+  });
 }
 
 function finalizeEnterApp() {
@@ -246,13 +266,18 @@ const TOUR_STEPS = [
 
 let tourIdx = 0;
 function startTour() {
+  if (!state.token) return;
+  window.addEventListener('resize', positionTour);
   tourIdx = 0;
   $('#tour-overlay').classList.add('show');
   showTourStep();
 }
 function endTour() {
+  const wasOpen = $('#tour-overlay').classList.contains('show');
   $('#tour-overlay').classList.remove('show');
-  try { localStorage.setItem('jq_tour_done_' + (state.username || 'u'), '1'); } catch (e) {}
+  if (wasOpen) {
+    try { localStorage.setItem('jq_tour_done_' + (state.username || 'u'), '1'); } catch (e) {}
+  }
   window.removeEventListener('resize', positionTour);
 }
 async function showTourStep() {
@@ -322,10 +347,12 @@ $('#tour-skip').onclick = endTour;
 $('#btn-tour').onclick = startTour;
 window.addEventListener('resize', positionTour);
 
+let tourTimer;
 function maybeAutoTour() {
   let done = false;
   try { done = localStorage.getItem('jq_tour_done_' + (state.username || 'u')) === '1'; } catch (e) {}
-  if (!done) setTimeout(startTour, 700);   // let the dashboard settle first
+  clearTimeout(tourTimer);
+  if (!done) tourTimer = setTimeout(startTour, 700);
 }
 
 /* ============================================================
@@ -439,36 +466,71 @@ $('#btn-quick-auto').onclick = () => openAutoApply();
    ============================================================ */
 let jobsCache = [];
 let jobMeta = null;
+let jobsRequestId = 0;
+
+const pageCache = {
+  profile: null,
+  completeness: null,
+  autopilot: null
+};
 
 async function loadJobs() {
+  const requestId = ++jobsRequestId;
+  const token = state.token;
+  const current = () => requestId === jobsRequestId && token === state.token;
   const wrap = $('#jobs-content');
   wrap.className = 'center-load'; wrap.innerHTML = '<div class="spinner dark"></div>';
   try {
     if (!jobMeta) {
-      jobMeta = await api('/jobs/meta');
-      populateJobFilters(jobMeta);
+      const meta = await api('/jobs/meta');
+      if (!current()) return;
+      jobMeta = meta;
     }
+    populateJobFilters(jobMeta);
     const min = $('#job-minscore').value, q = $('#job-search').value.trim();
     const country = $('#job-country').value, source = $('#job-source').value;
     const qs = new URLSearchParams({ min_score: min });
     if (q) qs.set('q', q);
     if (country && country !== 'all') qs.set('country', country);
     if (source && source !== 'all') qs.set('source', source);
-    jobsCache = await api('/jobs/matches?' + qs.toString());
+    const jobs = await api('/jobs/matches?' + qs.toString());
+    if (!current()) return;
+    jobsCache = jobs;
     wrap.className = '';
     renderJobsNote(jobMeta, jobsCache.length);
     renderJobs(jobsCache);
-  } catch (e) { wrap.className = ''; wrap.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+  } catch (e) { if (current()) { wrap.className = ''; wrap.innerHTML = `<div class="empty">${esc(e.message)}</div>`; } }
 }
 
 function populateJobFilters(meta) {
   const cSel = $('#job-country');
+
   if (cSel.options.length <= 1) {
-    meta.countries.forEach(c => { const o = el('option'); o.value = c; o.textContent = c; cSel.appendChild(o); });
+    [
+      'Finland',
+      'Denmark',
+      'Sweden',
+      'Norway',
+      'France',
+      'Germany',
+      'Rest of Europe',
+      'European Union'
+    ].forEach(c => {
+      const o = el('option');
+      o.value = c;
+      o.textContent = c;
+      cSel.appendChild(o);
+    });
   }
+
   const sSel = $('#job-source');
   if (sSel.options.length <= 1) {
-    meta.sources.forEach(s => { const o = el('option'); o.value = s.name; o.textContent = `${s.name} (${s.count})`; sSel.appendChild(o); });
+    meta.sources.forEach(s => {
+      const o = el('option');
+      o.value = s.name;
+      o.textContent = `${s.name} (${s.count})`;
+      sSel.appendChild(o);
+    });
   }
 }
 
@@ -499,7 +561,8 @@ function renderJobs(jobs) {
       <div class="ring-score big ${ringClass(j.match_score)}" style="--p:0" data-p="${j.match_score}"><span>${Math.round(j.match_score)}</span></div>
       <div class="job-main">
         <div class="job-title">${esc(j.title)}</div>
-        <div class="job-meta"><span class="src-badge ${srcClass(j.source)}">${esc(j.source)}</span> · ${esc(j.company)} · <span class="country">${esc(j.country || j.location)}</span> ${j.remote ? '<span class="tag-remote">Remote</span>' : ''} ${j.requires_cover_letter ? '· <span class="badge-cover">✍ cover letter</span>' : ''}</div>
+        <div class="job-meta"><span class="src-badge ${srcClass(j.source)}">${esc(j.source)}</span> · ${esc(j.company)} ${j.remote ? '' : ` · <span class="country">${esc(j.country || j.location)}</span>`} ${j.remote ? '<span class="tag-remote">Remote</span>' : ''} ${j.requires_cover_letter ? '· <span class="badge-cover">✍ cover letter</span>' : ''}</div>
+
         <div class="job-skills">${matched}${missing}</div>
       </div>
       <div class="job-actions">
@@ -520,7 +583,7 @@ $('#job-minscore').onchange = loadJobs;
 $('#job-country').onchange = loadJobs;
 $('#job-source').onchange = loadJobs;
 $('#btn-refresh-jobs').onclick = async () => {
-  try { const d = await api('/jobs/refresh', { method: 'POST' }); toast(`Feed refreshed · ${d.total} jobs available`, 'ok'); loadJobs(); }
+  try { const d = await api('/jobs/refresh', { method: 'POST' }); jobMeta = null; toast(`Feed refreshed · ${d.total_applyable} jobs available`, 'ok'); loadJobs(); }
   catch (e) { toast(e.message, 'err'); }
 };
 $('#btn-auto-open').onclick = () => openAutoApply();
@@ -530,12 +593,8 @@ async function openApplyReview(jobId) {
   const job = jobsCache.find(j => j.id == jobId);
   const node = el('div');
   node.innerHTML = `
-    <div class="seg" id="tpl-seg">
-      <button class="on" data-tpl="modern">Modern CV</button>
-      <button data-tpl="classic">Classic CV</button>
-    </div>
     <div class="hint" style="margin-bottom:10px">Your CV is tailored to <b>${esc(job ? job.title : 'this role')}</b>. Content comes from your profile — edit it under <a data-goprofile>My profile</a> to change the CV.</div>
-    <div class="doc-preview"><iframe id="cv-frame"></iframe></div>
+    <div class="doc-preview"><iframe id="cv-frame" sandbox="" title="CV preview"></iframe></div>
     <div class="review-cover">
       <label>Cover letter — edit before sending</label>
       <textarea id="cover-edit" placeholder="Loading a draft…"></textarea>
@@ -543,47 +602,69 @@ async function openApplyReview(jobId) {
     </div>
     <div style="margin-top:16px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
       <button class="btn btn-ghost btn-sm" id="cv-download">⬇ Download CV (PDF)</button>
-      <button class="btn btn-primary" id="do-apply">Submit application</button>
+      <button class="btn btn-primary" id="do-apply" disabled>Submit application</button>
     </div>
     <div class="form-msg" id="apply-msg"></div>`;
   openModal('Review & apply', node);
 
-  let tpl = 'modern';
-  const frame = $('#cv-frame');
-  const renderCV = async () => {
-    frame.srcdoc = '<div style="display:grid;place-items:center;height:100%;font-family:sans-serif;color:#888">Generating…</div>';
-    try { const d = await api('/cv/preview', { method: 'POST', body: { job_id: +jobId, template: tpl } }); frame.srcdoc = d.html; }
-    catch (e) { frame.srcdoc = `<p style="color:#b00">${esc(e.message)}</p>`; }
+  const tpl = 'modern';
+  const frame = $('#cv-frame', node);
+  const btn = $('#do-apply', node);
+  const ta = $('#cover-edit', node);
+  const download = $('#cv-download', node);
+  const token = state.token;
+  const active = () => node.isConnected && token === state.token;
+  let previewId = 0, previewReady = false, draftReady = false, submitting = false;
+  const updateButtons = () => {
+    btn.disabled = !previewReady || !draftReady || submitting;
+    download.disabled = !previewReady || submitting;
   };
-  $$('#tpl-seg button', node).forEach(b => b.onclick = () => {
-    $$('#tpl-seg button', node).forEach(x => x.classList.remove('on')); b.classList.add('on');
-    tpl = b.dataset.tpl; renderCV();
-  });
+  const renderCV = async () => {
+    const requestId = ++previewId;
+    previewReady = false;
+    updateButtons();
+    frame.srcdoc = '<div style="display:grid;place-items:center;height:100%;font-family:sans-serif;color:#888">Generating…</div>';
+    try {
+      const d = await api('/cv/preview', { method: 'POST', body: { job_id: +jobId, template: tpl } });
+      if (!active() || requestId !== previewId) return;
+      frame.srcdoc = d.html;
+      previewReady = true;
+    } catch (e) {
+      if (active() && requestId === previewId) frame.srcdoc = `<p style="color:#b00">${esc(e.message)}</p>`;
+    } finally { if (active() && requestId === previewId) updateButtons(); }
+  };
   node.querySelector('[data-goprofile]').onclick = () => { closeModal(); navigate('profile'); };
 
-  // draft cover letter (only if the job wants one; else optional)
-  const ta = $('#cover-edit');
-  try {
-    const d = await api('/cv/cover-letter/draft', { method: 'POST', body: { job_id: +jobId } });
-    ta.value = d.cover_letter || '';
-    $('#cover-note').textContent = job && job.requires_cover_letter
-      ? 'This role asks for a cover letter. Personalise it, then submit.'
-      : 'Optional for this role — leave blank to skip, or edit and send.';
-  } catch { ta.value = ''; }
-
-  $('#cv-download').onclick = () => downloadPDF(jobId, tpl);
-  $('#do-apply').onclick = async () => {
-    const btn = $('#do-apply'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Submitting…';
+  download.onclick = () => downloadPDF(jobId, tpl);
+  btn.onclick = async () => {
+    if (btn.disabled || !active()) return;
+    if (job?.requires_cover_letter && !ta.value.trim()) {
+      $('#apply-msg', node).textContent = 'Please add the required cover letter.';
+      return;
+    }
+    submitting = true; updateButtons(); btn.innerHTML = '<span class="spinner"></span> Submitting…';
     try {
       await api('/applications', { method: 'POST', body: {
         job_id: +jobId, template: tpl,
         cover_letter: ta.value.trim() ? ta.value : (job && job.requires_cover_letter ? ta.value : ''),
       } });
-      toast(`Applied to ${job ? job.title : 'job'} ✓`, 'ok');
-      closeModal(); loadJobs();
-    } catch (e) { setMsg('apply-msg', e.message); btn.disabled = false; btn.innerHTML = 'Submit application'; }
+      if (active()) { toast('Application attempt recorded. Check the submission log for its result and mode.', 'ok'); closeModal(); loadJobs(); }
+    } catch (e) {
+      if (active()) { $('#apply-msg', node).textContent = e.message; $('#apply-msg', node).className = 'form-msg err'; }
+    } finally { submitting = false; btn.innerHTML = 'Submit application'; updateButtons(); }
   };
   renderCV();
+  ta.disabled = true;
+  try {
+    const d = await api('/cv/cover-letter/draft', { method: 'POST', body: { job_id: +jobId } });
+    if (!active()) return;
+    ta.value = d.cover_letter || '';
+    $('#cover-note', node).textContent = job?.requires_cover_letter
+      ? 'This role asks for a cover letter. Personalise it, then submit.'
+      : 'Optional for this role — leave blank to skip, or edit and send.';
+  } catch (e) {
+    if (active()) $('#cover-note', node).textContent = 'Draft unavailable. You can write a cover letter here.';
+  } finally { draftReady = true; ta.disabled = false; ta.placeholder = 'Write or edit your cover letter'; updateButtons(); }
 }
 
 async function downloadPDF(jobId, tpl) {
@@ -610,8 +691,17 @@ function openAutoApply() {
       <select class="input" id="aa-min"><option value="40">40%+</option><option value="50">50%+</option><option value="60" selected>60%+</option><option value="75">75%+</option></select></div>
     <div class="field"><label>Countries to apply in ${pref.length ? '<span class="hint">(your preferences are pre-selected)</span>' : ''}</label>
       <div class="country-picker" id="aa-countries">
-        ${countries.map(c => `<span class="country-opt ${isPref(c) ? 'on' : ''}" data-c="${esc(c)}">${esc(c)}</span>`).join('')}
-      </div><div class="hint">Leave all unselected to apply anywhere.</div></div>
+        ${[
+  'Finland',
+  'Denmark',
+  'Sweden',
+  'Norway',
+  'France',
+  'Germany',
+  'Rest of Europe',
+  'European Union'
+].map(c => `<span class="country-opt ${isPref(c) ? 'on' : ''}" data-c="${esc(c)}">${esc(c)}</span>`).join('')}
+      </div><div class="hint">Leave all unselected to use your profile's preferred countries. If your profile has none, all countries are eligible.</div></div>
     <div class="field"><label>Maximum applications this run</label>
       <select class="input" id="aa-limit"><option>3</option><option selected>5</option><option>8</option><option>10</option></select></div>
     <div style="text-align:right;margin-top:8px"><button class="btn btn-lime" id="aa-run">⚡ Run auto-apply</button></div>
@@ -656,7 +746,7 @@ async function loadApplications() {
             <td><div class="ring-score ${ringClass(a.match_score)}" style="--p:${a.match_score}"><span>${Math.round(a.match_score)}</span></div></td>
             <td><b>${esc(a.job.title)}</b>${a.auto_applied ? '<span class="auto-tag">AUTO</span>' : ''}<div class="c" style="font-size:12px;color:var(--muted)">${esc(a.job.location)}</div>${refOf(a.notes) ? `<div class="submitted-tag">✓ Submitted · <span class="mono">${esc(refOf(a.notes))}</span></div>` : ''}</td>
             <td>${esc(a.job.company)}</td>
-            <td><select class="status-select" data-app="${a.id}">
+            <td><select class="status-select" data-app="${a.id}" data-prev="${esc(a.status)}">
               ${opts.map(o => `<option value="${o}" ${o === a.status ? 'selected' : ''}>${STATUS_LABEL[o]}</option>`).join('')}
             </select></td>
             <td><button class="btn btn-ghost btn-sm" data-docs="${a.id}">View</button></td>
@@ -670,12 +760,15 @@ async function loadApplications() {
 
 async function updateStatus(id, status, sel) {
   const prev = sel.dataset.prev || 'applied';
+  if (prev === status) return;
+  sel.disabled = true;
   try {
     await api(`/applications/${id}/status`, { method: 'PATCH', body: { status } });
     sel.dataset.prev = status;
     sel.style.borderColor = STATUS_COLORS[status];
     toast(`Marked as “${STATUS_LABEL[status]}” — JobQuest is learning`, 'ok');
   } catch (e) { toast(e.message, 'err'); sel.value = prev; }
+  finally { sel.disabled = false; }
 }
 
 async function openDocs(id) {
@@ -685,7 +778,7 @@ async function openDocs(id) {
     const d = await api(`/applications/${id}/documents`);
     node.innerHTML = `
       <div class="seg" id="doc-seg"><button class="on" data-doc="cv">CV</button>${d.cover_letter ? '<button data-doc="cover">Cover letter</button>' : ''}</div>
-      <div id="doc-cv" class="doc-preview"><iframe></iframe></div>
+      <div id="doc-cv" class="doc-preview"><iframe sandbox="" title="Application CV"></iframe></div>
       <div id="doc-cover" class="cover-text hidden">${esc(d.cover_letter)}</div>`;
     node.querySelector('#doc-cv iframe').srcdoc = d.cv_html;
     $$('#doc-seg button', node).forEach(b => b.onclick = () => {
@@ -699,12 +792,22 @@ async function openDocs(id) {
 /* ============================================================
    PROFILE
    ============================================================ */
-async function loadProfile() {
+async function loadProfile(force = false) {
   try {
-    state.profile = await api('/profile');
+
+    if (!force && pageCache.profile) {
+      state.profile = pageCache.profile;
+    } else {
+      state.profile = await api('/profile');
+      pageCache.profile = state.profile;
+    }
+
     renderProfileForm(state.profile);
-    updateCompleteness();
-  } catch (e) { toast(e.message, 'err'); }
+    updateCompleteness(force);
+
+  } catch (e) {
+    toast(e.message, 'err');
+  }
 }
 
 function tagField(id, label, values, placeholder) {
@@ -826,21 +929,44 @@ async function saveProfile() {
     experience: collectRepeats('exp-list', true), projects: collectRepeats('proj-list', false),
   };
   try {
-    state.profile = await api('/profile', { method: 'PUT', body });
-    updateCompleteness();
+   state.profile = await api('/profile', {
+  method: 'PUT',
+  body
+});
+
+pageCache.profile = state.profile;
+pageCache.completeness = null;
+
+updateCompleteness(true);
     toast('Profile saved ✓', 'ok');
   } catch (e) { toast(e.message, 'err'); }
 }
 $('#btn-save-profile').onclick = saveProfile;
 $('#btn-save-profile-2').onclick = saveProfile;
 
-async function updateCompleteness() {
+async function updateCompleteness(force = false) {
+
   try {
-    const c = await api('/profile/completeness');
+
+    let c;
+
+    if (!force && pageCache.completeness) {
+      c = pageCache.completeness;
+    } else {
+      c = await api('/profile/completeness');
+      pageCache.completeness = c;
+    }
+
     $('#comp-bar').style.width = c.percent + '%';
     $('#comp-pct').textContent = c.percent + '%';
-    $('#comp-missing').textContent = c.missing.length ? 'Add for better matches: ' + c.missing.join(', ') : 'Your profile is complete — nice work! 🎯';
-  } catch { /* ignore */ }
+
+    $('#comp-missing').textContent =
+      c.missing.length
+        ? 'Add for better matches: ' + c.missing.join(', ')
+        : 'Your profile is complete — nice work! 🎯';
+
+  } catch {}
+
 }
 
 /* ============================================================
@@ -894,14 +1020,23 @@ function renderAutopilot(conf, logs) {
         <div style="padding:12px 0">
           <div class="lab" style="margin-bottom:8px">Countries to apply in</div>
           <div class="country-picker" id="ap-countries">
-            ${((jobMeta && jobMeta.countries) || []).map(c => {
+           ${[
+  'Finland',
+  'Denmark',
+  'Sweden',
+  'Norway',
+  'France',
+  'Germany',
+  'Rest of Europe',
+  'European Union'
+].map(c => {
               const saved = (s.countries || []);
               const pref = (state.profile && state.profile.preferred_locations) || [];
               const on = saved.length ? saved.includes(c) : pref.some(p => p.toLowerCase() === c.toLowerCase());
               return `<span class="country-opt ${on ? 'on' : ''}" data-c="${esc(c)}">${esc(c)}</span>`;
             }).join('')}
           </div>
-          <div class="hint" style="margin-top:8px">Defaults to your preferred countries. Leave all unselected to apply anywhere.</div>
+          <div class="hint" style="margin-top:8px">Defaults to your preferred countries. Leave all unselected to use your profile's preferred countries. If your profile has none, all countries are eligible.</div>
         </div>
         <div style="text-align:right;margin-top:14px"><button class="btn btn-primary btn-sm" id="ap-save">Save settings</button></div>
         <div class="hint" style="margin-top:10px">Last run: ${esc(lastRun)}${s.last_run_count ? ` · applied to ${s.last_run_count} job(s)` : ''}</div>
