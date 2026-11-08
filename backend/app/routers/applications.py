@@ -22,9 +22,6 @@ def apply(data: ApplyIn, user: User = Depends(get_current_user),
     if job.apply_type != "form":
         raise HTTPException(400, "This job requires logging into an employer portal, "
                                  "so it can't be submitted through JobQuest.")
-    if db.query(Application).filter(Application.user_id == user.id,
-                                    Application.job_id == job.id).first():
-        raise HTTPException(409, "You already applied to this job.")
     return apply_service.build_application(
         db, user, job, generate_cover_letter=data.generate_cover_letter,
         cover_letter_override=data.cover_letter, template=data.template,
@@ -87,12 +84,15 @@ def get_documents(app_id: int, user: User = Depends(get_current_user),
 @router.patch("/{app_id}/status", response_model=ApplicationOut)
 def update_status(app_id: int, data: StatusUpdateIn,
                   user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    if data.status not in STATUSES:
-        raise HTTPException(400, f"Status must be one of {STATUSES}.")
+    allowed_statuses = [status for status in STATUSES if status != "failed"]
+    if data.status not in allowed_statuses:
+        raise HTTPException(400, f"Status must be one of {allowed_statuses}.")
     app = db.query(Application).filter(Application.id == app_id,
                                        Application.user_id == user.id).first()
     if not app:
         raise HTTPException(404, "Application not found.")
+    if app.effective_status == "failed":
+        raise HTTPException(409, "A failed submission must be retried, not marked as successful.")
     app.status = data.status
     if data.notes:
         app.notes = data.notes

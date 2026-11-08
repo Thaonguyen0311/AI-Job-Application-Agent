@@ -15,6 +15,8 @@ router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 @router.get("")
 def dashboard(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     apps = db.query(Application).filter(Application.user_id == user.id).all()
+    failed_count = sum(a.effective_status == "failed" for a in apps)
+    apps = [a for a in apps if a.effective_status != "failed"]
     total = len(apps)
 
     by_status = Counter(a.status for a in apps)
@@ -45,6 +47,7 @@ def dashboard(user: User = Depends(get_current_user), db: Session = Depends(get_
 
     return {
         "total_applications": total,
+        "failed_applications": failed_count,
         "auto_applied": sum(1 for a in apps if a.auto_applied),
         "avg_score": avg_score,
         "response_rate": response_rate,

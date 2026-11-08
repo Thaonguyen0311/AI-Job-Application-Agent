@@ -59,8 +59,10 @@ def matches(q: str | None = None, min_score: float = 0.0, country: str | None = 
     _ensure_jobs(db)
 
     boosts = compute_boosts(db, user.id)
-    applied_ids = {a.job_id for a in
-                   db.query(Application).filter(Application.user_id == user.id).all()}
+    applications = db.query(Application).filter(Application.user_id == user.id).all()
+    by_job = {}
+    for application in applications:
+        by_job.setdefault(application.job_id, []).append(application)
 
     # Only directly-applyable (form) jobs are ever considered.
     query = db.query(Job).filter(Job.apply_type == APPLYABLE)
@@ -80,7 +82,10 @@ def matches(q: str | None = None, min_score: float = 0.0, country: str | None = 
         data["match_score"] = res["score"]
         data["matched_skills"] = res["matched_skills"]
         data["missing_skills"] = res["missing_skills"]
-        data["already_applied"] = job.id in applied_ids
+        attempts = by_job.get(job.id, [])
+        data["can_retry"] = bool(attempts) and all(a.can_retry for a in attempts)
+        data["already_applied"] = bool(attempts) and not data["can_retry"]
+        data["application_status"] = attempts[-1].effective_status if attempts else None
         out.append(data)
     out.sort(key=lambda d: d["match_score"], reverse=True)
     return out
