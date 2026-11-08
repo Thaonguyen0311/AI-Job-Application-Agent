@@ -10,8 +10,10 @@ scheduler go through here, so every submission:
 from __future__ import annotations
 
 import logging
+from threading import RLock
 from datetime import datetime
 
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from ..agents.cover_letter import render_cover_letter_text
@@ -23,6 +25,10 @@ from ..scraper.auto_apply import submit_application
 from . import jobs_service
 
 log = logging.getLogger("jobquest.apply")
+
+# Serialize simultaneous attempts in this single-process deployment. Recheck the
+# database inside the lock so a double click cannot submit a successful job twice.
+_submission_locks = tuple(RLock() for _ in range(64))
 
 # Common aliases so a stated preference like "USA" matches a job country
 # stored as "United States".
@@ -76,11 +82,11 @@ def get_or_create_settings(db: Session, user_id: int) -> AutopilotSetting:
 def _log(db, user_id, job, application_id, run_type, status, result, score):
     entry = SubmissionLog(
         user_id=user_id, job_id=job.id if job else None, application_id=application_id,
-        run_type=run_type, status=status, mode=(result or {}).get("mode", "demo"),
+        run_type=run_type, status=status, mode=(result or {}).get("mode", "unknown"),
         match_score=score, confirmation_ref=(result or {}).get("confirmation_ref", ""),
         message=(result or {}).get("message", ""),
     )
-    db.add(entry); db.commit()
+    db.add(entry)
     return entry
 
 
@@ -89,7 +95,20 @@ def build_application(db: Session, user: User, job: Job,
                      cover_letter_override: str | None = None,
                      template: str = "modern",
                      run_type: str = "single", auto: bool = False) -> Application:
-    """Create + submit one application, writing an audit log. Assumes no dup."""
+    """Submit once, or retry a documented Demo failure, retaining attempt logs."""
+    with _submission_locks[user.id % len(_submission_locks)]:
+        db.expire_all()
+        return _build_application(db, user, job, generate_cover_letter,
+                                  cover_letter_override, template, run_type, auto)
+
+
+def _build_application(db, user, job, generate_cover_letter, cover_letter_override,
+                       template, run_type, auto):
+    existing = db.query(Application).filter(
+        Application.user_id == user.id, Application.job_id == job.id).all()
+    if any(not app.can_retry for app in existing):
+        raise HTTPException(409, "Already submitted or retry is not safe. Check the submission log.")
+    app = existing[0] if existing else None
     # Safety: never auto-submit to jobs that require an employer-portal login.
     if job.apply_type != "form":
         raise ValueError("This job requires logging into an employer portal; "
@@ -106,16 +125,23 @@ def build_application(db: Session, user: User, job: Job,
 
     result = submit_application(user.profile, job, cv_html, cover)
 
-    app = Application(
-        user_id=user.id, job_id=job.id, match_score=res["score"],
-        matched_skills=res["matched_skills"], missing_skills=res["missing_skills"],
-        status="applied", cv_html=cv_html, cover_letter=cover,
-        auto_applied=auto, notes=result["message"],
-    )
-    db.add(app); db.commit(); db.refresh(app)
-
-    _log(db, user.id, job, app.id, run_type,
-         "submitted" if result.get("ok") else "failed", result, res["score"])
+    if app is None:
+        app = Application(user_id=user.id, job_id=job.id)
+    app.match_score = res["score"]
+    app.matched_skills, app.missing_skills = res["matched_skills"], res["missing_skills"]
+    app.status = "applied" if result.get("ok") else "failed"
+    app.cv_html, app.cover_letter = cv_html, cover
+    app.auto_applied, app.notes = auto, result["message"]
+    try:
+        db.add(app)
+        db.flush()  # allocate the ID, but commit the application and log together
+        _log(db, user.id, job, app.id, run_type,
+             "submitted" if result.get("ok") else "failed", result, res["score"])
+        db.commit()
+        db.refresh(app)
+    except Exception:
+        db.rollback()
+        raise
     return app
 
 
@@ -151,10 +177,10 @@ def run_autopilot_for_user(db: Session, user: User, run_type: str = "scheduled")
                                          run_type=run_type, auto=True))
 
     settings_row.last_run_at = datetime.utcnow()
-    settings_row.last_run_count = len(created)
+    settings_row.last_run_count = sum(a.effective_status != "failed" for a in created)
     db.commit()
     log.info("Autopilot(%s) user=%s applied=%d/%d candidates",
-             run_type, user.username, len(created), len(candidates))
+             run_type, user.username, settings_row.last_run_count, len(candidates))
     return {"created": created, "considered": len(candidates)}
 
 
@@ -167,7 +193,7 @@ def run_all_scheduled(db: Session) -> dict:
         if not user:
             continue
         summary = run_autopilot_for_user(db, user, run_type="scheduled")
-        total += len(summary.get("created", []))
+        total += sum(a.effective_status != "failed" for a in summary.get("created", []))
     log.info("Scheduled run complete: %d users, %d applications submitted", len(enabled), total)
     return {"users": len(enabled), "applications": total,
             "ran_at": datetime.utcnow().isoformat() + "Z"}

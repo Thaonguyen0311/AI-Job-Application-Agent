@@ -92,12 +92,15 @@ $('#btn-fg-reset').onclick = async () => {
 };
 
 function saveSession(d) {
+  if (state.token && state.token !== d.access_token) logout();
+  resetOnboarding();
   state.token = d.access_token; state.username = d.username;
   localStorage.setItem('jq_token', d.access_token);
   localStorage.setItem('jq_user', d.username);
   enterApp();
 }
 function logout() {
+  resetOnboarding();
   state.token = state.username = null; state.profile = null; jobMeta = null;
   jobsCache = [];
   Object.keys(pageCache).forEach(key => { pageCache[key] = null; });
@@ -145,7 +148,30 @@ function finalizeEnterApp() {
 }
 
 /* ---------- Onboarding wizard ---------- */
+let onboardingVersion = 0;
+function resetOnboarding(profile = {}) {
+  onboardingVersion++;
+  const onb = $('#onboarding');
+  $$('input, textarea', onb).forEach(input => { input.value = ''; });
+  $$('.tag', onb).forEach(tag => tag.remove());
+  ['full_name', 'email', 'phone', 'location', 'linkedin', 'github', 'university',
+   'degree', 'graduation_year', 'gpa', 'summary'].forEach(key => {
+    $('#onb-' + key).value = profile[key] || '';
+  });
+  ['skills', 'languages', 'preferred_roles', 'preferred_locations'].forEach(key => {
+    const wrap = $('#onb-' + key), input = $('input', wrap);
+    (profile[key] || []).forEach(value => wrap.insertBefore(elFromHTML(tagHTML(value)), input));
+  });
+  const exp = (profile.experience || [])[0] || {};
+  $('#onb-exp-title').value = exp.title || '';
+  $('#onb-exp-org').value = exp.org || '';
+  $('#onb-exp-bullets').value = (exp.bullets || []).join('\n');
+  $('#onb-msg').textContent = ''; $('#onb-msg').className = 'form-msg';
+  $('#onb-finish').disabled = false;
+  $('#onb-finish').textContent = 'Finish & explore jobs →';
+}
 function showOnboarding() {
+  resetOnboarding(state.profile || {});
   $('#app').style.display = 'none';
   const onb = $('#onboarding');
   onb.classList.add('show');
@@ -175,6 +201,10 @@ function validStep1() {
   return ok;
 }
 async function finishOnboarding() {
+  const btn = $('#onb-finish');
+  if (btn.disabled) return;
+  const token = state.token, version = onboardingVersion;
+  const current = () => token === state.token && version === onboardingVersion;
   const expTitle = $('#onb-exp-title').value.trim();
   const experience = expTitle ? [{
     title: expTitle, org: $('#onb-exp-org').value.trim(), dates: '',
@@ -191,12 +221,17 @@ async function finishOnboarding() {
     preferred_locations: readTags('onb-preferred_locations'),
     experience, projects: [], hobbies: [], onboarded: true,
   };
-  const btn = $('#onb-finish'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Saving…';
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Saving…';
   try {
-    state.profile = await api('/profile', { method: 'PUT', body });
+    const profile = await api('/profile', { method: 'PUT', body });
+    if (!current()) return;
+    state.profile = profile;
     toast('Profile ready — welcome to JobQuest! 🎉', 'ok');
     finalizeEnterApp();
-  } catch (e) { setMsg('onb-msg', e.message); btn.disabled = false; btn.innerHTML = 'Finish & explore jobs →'; }
+  } catch (e) { if (current()) setMsg('onb-msg', e.message); }
+  finally {
+    if (current()) { btn.disabled = false; btn.textContent = 'Finish & explore jobs →'; }
+  }
 }
 
 function navigate(page) {
@@ -361,7 +396,7 @@ function maybeAutoTour() {
 const STATUS_COLORS = { applied: '#6C5CE7', in_review: '#F5A524', interview: '#22C55E',
   offer: '#0EA5A0', rejected: '#EF4444', withdrawn: '#94A3B8' };
 const STATUS_LABEL = { applied: 'Applied', in_review: 'In review', interview: 'Interview',
-  offer: 'Offer', rejected: 'Rejected', withdrawn: 'Withdrawn' };
+  offer: 'Offer', rejected: 'Rejected', withdrawn: 'Withdrawn', failed: 'Failed' };
 
 function ringClass(score) { return score >= 75 ? 'good' : score >= 50 ? 'mid' : ''; }
 
@@ -566,9 +601,13 @@ function renderJobs(jobs) {
         <div class="job-skills">${matched}${missing}</div>
       </div>
       <div class="job-actions">
-        ${j.already_applied
-          ? '<button class="btn btn-ghost btn-sm" disabled>✓ Applied</button>'
-          : `<button class="btn btn-primary btn-sm" data-review="${j.id}">Review &amp; apply</button>`}
+        ${j.application_status === 'failed'
+          ? (j.can_retry
+            ? `<button class="btn btn-primary btn-sm" data-review="${j.id}">Retry (Demo)</button>`
+            : '<button class="btn btn-ghost btn-sm" disabled>Failed · check log</button>')
+          : j.already_applied
+            ? '<button class="btn btn-ghost btn-sm" disabled>✓ Applied</button>'
+            : `<button class="btn btn-primary btn-sm" data-review="${j.id}">Review &amp; apply</button>`}
       </div>`;
     list.appendChild(c);
   });
@@ -589,8 +628,8 @@ $('#btn-refresh-jobs').onclick = async () => {
 $('#btn-auto-open').onclick = () => openAutoApply();
 
 /* ---------- Review & apply modal (manual) ---------- */
-async function openApplyReview(jobId) {
-  const job = jobsCache.find(j => j.id == jobId);
+async function openApplyReview(jobId, applicationJob = null) {
+  const job = applicationJob || jobsCache.find(j => j.id == jobId);
   const node = el('div');
   node.innerHTML = `
     <div class="hint" style="margin-bottom:10px">Your CV is tailored to <b>${esc(job ? job.title : 'this role')}</b>. Content comes from your profile — edit it under <a data-goprofile>My profile</a> to change the CV.</div>
@@ -614,9 +653,9 @@ async function openApplyReview(jobId) {
   const download = $('#cv-download', node);
   const token = state.token;
   const active = () => node.isConnected && token === state.token;
-  let previewId = 0, previewReady = false, draftReady = false, submitting = false;
+  let previewId = 0, previewReady = false, draftReady = false, submitting = false, retryBlocked = false;
   const updateButtons = () => {
-    btn.disabled = !previewReady || !draftReady || submitting;
+    btn.disabled = !previewReady || !draftReady || submitting || retryBlocked;
     download.disabled = !previewReady || submitting;
   };
   const renderCV = async () => {
@@ -644,11 +683,23 @@ async function openApplyReview(jobId) {
     }
     submitting = true; updateButtons(); btn.innerHTML = '<span class="spinner"></span> Submitting…';
     try {
-      await api('/applications', { method: 'POST', body: {
+      const application = await api('/applications', { method: 'POST', body: {
         job_id: +jobId, template: tpl,
         cover_letter: ta.value.trim() ? ta.value : (job && job.requires_cover_letter ? ta.value : ''),
       } });
-      if (active()) { toast('Application attempt recorded. Check the submission log for its result and mode.', 'ok'); closeModal(); loadJobs(); }
+      if (active()) {
+        if (application.status === 'failed') {
+          retryBlocked = !application.can_retry;
+          setMsg('apply-msg', 'Submission failed. ' + (application.can_retry
+            ? 'You can retry this Demo application.'
+            : 'Check the submission log and employer portal before taking further action.'));
+        } else {
+          toast('Application attempt recorded. Check the submission log for its result and mode.', 'ok');
+          closeModal();
+        }
+        if (!$('#page-applications').classList.contains('hidden')) loadApplications();
+        else loadJobs();
+      }
     } catch (e) {
       if (active()) { $('#apply-msg', node).textContent = e.message; $('#apply-msg', node).className = 'form-msg err'; }
     } finally { submitting = false; btn.innerHTML = 'Submit application'; updateButtons(); }
@@ -717,9 +768,10 @@ function openAutoApply() {
       const box = $('#aa-result');
       if (!created.length) { box.innerHTML = `<div class="empty">No new jobs met your criteria. Try lowering the score or widening countries.</div>`; }
       else {
-        box.innerHTML = `<div class="hint" style="margin-bottom:8px">Applied to ${created.length} role${created.length === 1 ? '' : 's'} ✓</div>` +
+        const submitted = created.filter(a => a.status !== 'failed').length;
+        box.innerHTML = `<div class="hint" style="margin-bottom:8px">Submitted: ${submitted} · Failed: ${created.length - submitted}</div>` +
           created.map(a => `<div class="recent-row"><div class="ring-score ${ringClass(a.match_score)}" style="--p:${a.match_score}"><span>${Math.round(a.match_score)}</span></div><div class="grow"><div class="t">${esc(a.job.title)}</div><div class="c">${esc(a.job.company)} · ${esc(a.job.country || a.job.location)}</div></div>${a.cover_letter ? '<span class="badge-cover">✍ cover letter</span>' : ''}</div>`).join('');
-        toast(`Auto-applied to ${created.length} job${created.length === 1 ? '' : 's'} 🚀`, 'ok');
+        toast(`Submitted: ${submitted} · Failed: ${created.length - submitted}`, submitted === created.length ? 'ok' : 'err');
       }
     } catch (e) { toast(e.message, 'err'); }
     btn.disabled = false; btn.innerHTML = '⚡ Run auto-apply';
@@ -737,24 +789,30 @@ async function loadApplications() {
     wrap.className = '';
     if (!apps.length) { wrap.innerHTML = `<div class="empty">No applications yet. Go to <b>Find jobs</b> and apply — or let auto-apply do the work.</div>`; return; }
     const opts = ['applied', 'in_review', 'interview', 'offer', 'rejected', 'withdrawn'];
-    const refOf = n => { const m = /Confirmation\s+([A-Z0-9\-]+)/i.exec(n || ''); return m ? m[1] : ''; };
     wrap.innerHTML = `
       <table class="app-table">
         <thead><tr><th>Match</th><th>Role</th><th>Company</th><th>Status</th><th>Docs</th></tr></thead>
         <tbody>${apps.map(a => `
           <tr>
             <td><div class="ring-score ${ringClass(a.match_score)}" style="--p:${a.match_score}"><span>${Math.round(a.match_score)}</span></div></td>
-            <td><b>${esc(a.job.title)}</b>${a.auto_applied ? '<span class="auto-tag">AUTO</span>' : ''}<div class="c" style="font-size:12px;color:var(--muted)">${esc(a.job.location)}</div>${refOf(a.notes) ? `<div class="submitted-tag">✓ Submitted · <span class="mono">${esc(refOf(a.notes))}</span></div>` : ''}</td>
+            <td><b>${esc(a.job.title)}</b>${a.auto_applied ? '<span class="auto-tag">AUTO</span>' : ''}<div class="c" style="font-size:12px;color:var(--muted)">${esc(a.job.location)}</div>${a.submission_status === 'submitted' ? `<div class="submitted-tag">✓ Submitted · <span class="mono">${esc(a.confirmation_ref)}</span></div>` : ''}</td>
             <td>${esc(a.job.company)}</td>
-            <td><select class="status-select" data-app="${a.id}" data-prev="${esc(a.status)}">
+            <td><select class="status-select" data-app="${a.id}" data-prev="${esc(a.status)}" ${a.status === 'failed' ? 'disabled' : ''}>
+              ${a.status === 'failed' ? '<option selected>Failed</option>' : ''}
               ${opts.map(o => `<option value="${o}" ${o === a.status ? 'selected' : ''}>${STATUS_LABEL[o]}</option>`).join('')}
-            </select></td>
+            </select>${a.can_retry
+              ? `<button class="btn btn-ghost btn-sm" data-retry="${a.id}">Retry (Demo)</button>`
+              : a.status === 'failed' ? '<div class="hint">Check log; retry is not confirmed safe.</div>' : ''}</td>
             <td><button class="btn btn-ghost btn-sm" data-docs="${a.id}">View</button></td>
           </tr>`).join('')}
         </tbody>
       </table>`;
     $$('[data-app]', wrap).forEach(sel => sel.onchange = () => updateStatus(sel.dataset.app, sel.value, sel));
     $$('[data-docs]', wrap).forEach(b => b.onclick = () => openDocs(b.dataset.docs));
+    $$('[data-retry]', wrap).forEach(b => b.onclick = () => {
+      const application = apps.find(a => a.id == b.dataset.retry);
+      openApplyReview(application.job.id, application.job);
+    });
   } catch (e) { wrap.className = ''; wrap.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
 }
 
@@ -1099,7 +1157,8 @@ $('#btn-run-now').onclick = async () => {
   const btn = $('#btn-run-now'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Running…';
   try {
     const created = await api('/autopilot/run-now', { method: 'POST' });
-    toast(created.length ? `Autopilot applied to ${created.length} job${created.length === 1 ? '' : 's'} 🚀` : 'No new jobs met your threshold.', created.length ? 'ok' : '');
+    const submitted = created.filter(a => a.status !== 'failed').length;
+    toast(created.length ? `Submitted: ${submitted} · Failed: ${created.length - submitted}` : 'No new jobs met your threshold.', created.length && submitted !== created.length ? 'err' : 'ok');
     loadAutopilot();
   } catch (e) { toast(e.message, 'err'); }
   btn.disabled = false; btn.innerHTML = '⚡ Run now';

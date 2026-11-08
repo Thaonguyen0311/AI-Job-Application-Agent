@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import Any, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 
 # ---------- Auth ----------
@@ -87,6 +87,8 @@ class JobMatchOut(JobOut):
     matched_skills: list[str]
     missing_skills: list[str]
     already_applied: bool = False
+    application_status: Optional[str] = None
+    can_retry: bool = False
 
 
 # ---------- Applications ----------
@@ -114,7 +116,10 @@ class ApplicationOut(BaseModel):
     match_score: float
     matched_skills: list[str]
     missing_skills: list[str]
-    status: str
+    status: str = Field(validation_alias=AliasChoices("effective_status", "status"))
+    submission_status: str = "unknown"
+    can_retry: bool = False
+    confirmation_ref: str = ""
     auto_applied: bool
     notes: str
     created_at: Optional[datetime] = None

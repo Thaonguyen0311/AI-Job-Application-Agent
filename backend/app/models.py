@@ -6,6 +6,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 
+from .config import settings
 from .database import Base
 
 
@@ -105,6 +106,31 @@ class Application(Base):
 
     user = relationship("User", back_populates="applications")
     job = relationship("Job")
+    # Read existing logs without adding columns or rewriting historical rows.
+    submission_logs = relationship("SubmissionLog", viewonly=True, lazy="selectin",
+                                   order_by="SubmissionLog.id")
+
+    @property
+    def submission_status(self):
+        return self.submission_logs[-1].status if self.submission_logs else "unknown"
+
+    @property
+    def effective_status(self):
+        return "failed" if self.submission_status == "failed" else self.status
+
+    @property
+    def can_retry(self):
+        # Missing evidence, any prior success, or any Live attempt blocks retry.
+        return (settings.apply_mode == "demo" and self.effective_status == "failed"
+                and bool(self.submission_logs) and all(
+            entry.mode == "demo" and entry.status == "failed"
+            for entry in self.submission_logs
+        ))
+
+    @property
+    def confirmation_ref(self):
+        return (self.submission_logs[-1].confirmation_ref
+                if self.submission_status == "submitted" else "")
 
 
 class PreferenceSignal(Base):
@@ -164,7 +190,7 @@ class SubmissionLog(Base):
 
 # Canonical status lifecycle used across the app.
 STATUSES = [
-    "applied", "in_review", "interview", "offer", "rejected", "withdrawn"
+    "applied", "in_review", "interview", "offer", "rejected", "withdrawn", "failed"
 ]
 POSITIVE_STATUSES = {"in_review", "interview", "offer"}
 NEGATIVE_STATUSES = {"rejected", "withdrawn"}
