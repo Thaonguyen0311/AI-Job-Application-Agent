@@ -3,6 +3,9 @@
 No email verification anywhere, by design. Forgot-password works purely through
 the security question set at registration.
 """
+from threading import Lock
+from time import monotonic
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
@@ -14,6 +17,28 @@ from ..models import Profile, User
 from ..schemas import (ForgotResetIn, ForgotStartIn, LoginIn, RegisterIn, Token)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+_RESET_ATTEMPT_LIMIT = 5
+_RESET_WINDOW_SECONDS = 15 * 60
+_reset_attempts: dict[int, tuple[int, float]] = {}
+_reset_attempts_lock = Lock()
+
+
+def _reserve_reset_attempt(user_id: int) -> None:
+    """Reserve a guess before checking the answer, including concurrent requests."""
+    with _reset_attempts_lock:
+        now = monotonic()
+        expired = [key for key, (_, end) in _reset_attempts.items() if end <= now]
+        for key in expired:
+            del _reset_attempts[key]
+        count, end = _reset_attempts.get(user_id, (0, now + _RESET_WINDOW_SECONDS))
+        if count >= _RESET_ATTEMPT_LIMIT:
+            raise HTTPException(
+                429,
+                "Too many password reset attempts. Try again later.",
+                headers={"Retry-After": str(int(end - now) + 1)},
+            )
+        _reset_attempts[user_id] = (count + 1, end)
 
 
 @router.post("/register", response_model=Token)
@@ -70,6 +95,7 @@ def forgot_reset(data: ForgotResetIn, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == data.username).first()
     if not user:
         raise HTTPException(404, "No account with that username.")
+    _reserve_reset_attempt(user.id)
     if not verify_password(normalize_answer(data.security_answer), user.security_answer_hash):
         raise HTTPException(401, "That answer doesn't match. Try again.")
     if len(data.new_password) < 6:
