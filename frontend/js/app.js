@@ -586,9 +586,10 @@ function populateJobFilters(meta) {
 
 function renderJobsNote(meta, showing) {
   const sources = meta.sources.map(s => s.name).join(', ');
+  const manualCount = jobsCache.filter(j => !j.can_auto_apply).length;
   $('#jobs-note').innerHTML =
-    `Showing <b>${showing}</b> directly-applyable job${showing === 1 ? '' : 's'} from ${esc(sources)}.` +
-    (meta.hidden_login_required ? ` <span class="lock">🔒 ${meta.hidden_login_required} hidden — they require signing into an employer portal, so JobQuest won't apply to them.</span>` : '');
+    `Showing <b>${showing}</b> matching job${showing === 1 ? '' : 's'} from ${esc(sources)}. ` +
+    `<span class="hint">${manualCount} require manual application through an employer portal; JobQuest will not submit those automatically.</span>`;
 }
 
 function srcClass(source) {
@@ -607,23 +608,27 @@ function renderJobs(jobs) {
     const c = el('div', 'job-card');
     const matched = j.matched_skills.map(s => `<span class="skill-tag match">${esc(s)}</span>`).join('');
     const missing = j.missing_skills.slice(0, 4).map(s => `<span class="skill-tag miss">${esc(s)}</span>`).join('');
+    const jobLink = j.url
+      ? `<a href="${esc(j.url)}" target="_blank" rel="noopener noreferrer">View original job posting ↗</a>`
+      : '<span class="hint">Original job link unavailable</span>';
+    const action = !j.can_auto_apply
+      ? `<div class="manual-apply-notice"><b>Manual application required</b><div>${esc(j.apply_message || 'Apply through the employer portal; automatic submission is unavailable.')}</div></div>`
+      : j.application_status === 'failed'
+        ? (j.can_retry
+          ? `<button class="btn btn-primary btn-sm" data-review="${j.id}">Retry (Demo)</button>`
+          : '<button class="btn btn-ghost btn-sm" disabled>Failed · check log</button>')
+        : j.already_applied
+          ? '<button class="btn btn-ghost btn-sm" disabled>✓ Applied</button>'
+          : `<button class="btn btn-primary btn-sm" data-review="${j.id}">Review &amp; apply</button>`;
     c.innerHTML = `
       <div class="ring-score big ${ringClass(j.match_score)}" style="--p:0" data-p="${j.match_score}"><span>${Math.round(j.match_score)}</span></div>
       <div class="job-main">
         <div class="job-title">${esc(j.title)}</div>
         <div class="job-meta"><span class="src-badge ${srcClass(j.source)}">${esc(j.source)}</span> · ${esc(j.company)} ${j.remote ? '' : ` · <span class="country">${esc(j.country || j.location)}</span>`} ${j.remote ? '<span class="tag-remote">Remote</span>' : ''} ${j.requires_cover_letter ? '· <span class="badge-cover">✍ cover letter</span>' : ''}</div>
-
         <div class="job-skills">${matched}${missing}</div>
+        <div class="job-link">${jobLink}</div>
       </div>
-      <div class="job-actions">
-        ${j.application_status === 'failed'
-          ? (j.can_retry
-            ? `<button class="btn btn-primary btn-sm" data-review="${j.id}">Retry (Demo)</button>`
-            : '<button class="btn btn-ghost btn-sm" disabled>Failed · check log</button>')
-          : j.already_applied
-            ? '<button class="btn btn-ghost btn-sm" disabled>✓ Applied</button>'
-            : `<button class="btn btn-primary btn-sm" data-review="${j.id}">Review &amp; apply</button>`}
-      </div>`;
+      <div class="job-actions">${action}</div>`;
     list.appendChild(c);
   });
   wrap.innerHTML = ''; wrap.appendChild(list);
