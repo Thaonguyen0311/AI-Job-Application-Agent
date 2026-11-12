@@ -412,3 +412,21 @@ def test_dashboard_reports_avoided_skills():
         client.patch(f"/api/applications/{apps[0]['id']}/status", json={"status": "rejected"}, headers=h)
     learned = client.get("/api/dashboard", headers=h).json()["learned"]
     assert "avoided_skills" in learned and "rejection_count" in learned
+
+
+def test_manual_only_jobs_are_visible_with_external_link_and_status():
+    """Portal-login jobs remain discoverable but cannot be submitted by JobQuest."""
+    tok = _token("manual_only_user", "secret123")
+    h = {"Authorization": f"Bearer {tok}"}
+    client.put("/api/profile", json={"full_name": "Manual Only", "skills": ["Python", "SQL"]}, headers=h)
+    jobs = client.get("/api/jobs/matches", headers=h).json()
+    manual = [job for job in jobs if job["apply_type"] == "external"]
+    assert len(manual) == 2
+    assert all(job["can_auto_apply"] is False for job in manual)
+    assert all(job["application_method"] == "manual" for job in manual)
+    assert all(job["apply_message"] and job["url"].startswith("https://") for job in manual)
+    assert all(job["can_auto_apply"] is True for job in jobs if job["apply_type"] == "form")
+
+    rejected = client.post("/api/applications", json={"job_id": manual[0]["id"]}, headers=h)
+    assert rejected.status_code == 400
+    assert "employer portal" in rejected.json()["detail"].lower()
