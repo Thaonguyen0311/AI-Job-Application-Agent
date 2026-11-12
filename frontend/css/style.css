@@ -216,6 +216,11 @@ textarea.input { resize: vertical; min-height: 84px; }
 .job-title { font-family: var(--font-display); font-weight: 700; font-size: 16px; }
 .job-meta { font-size: 13px; color: var(--muted); margin: 3px 0 8px; }
 .job-skills { display: flex; flex-wrap: wrap; gap: 6px; }
+.job-link { margin-top: 9px; font-size: 13px; }
+.job-link a { color: var(--violet); font-weight: 600; text-decoration: none; }
+.job-link a:hover { text-decoration: underline; }
+.manual-apply-notice { max-width: 245px; color: var(--st_in_review, #9A6700); font-size: 12px; line-height: 1.45; text-align: right; }
+.manual-apply-notice b { display: block; margin-bottom: 3px; }
 .skill-tag { font-size: 12px; padding: 3px 9px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--line); }
 .skill-tag.match { background: #F2FBD6; border-color: #E1F0B0; color: #4d6111; }
 .skill-tag.miss { color: var(--muted); }
