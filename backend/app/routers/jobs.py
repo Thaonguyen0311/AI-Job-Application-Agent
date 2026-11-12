@@ -1,9 +1,7 @@
 """Job ingestion + scored matching against the current user's profile.
 
-Only jobs that can be applied to via a direct form (apply_type == 'form') are
-surfaced. Jobs that require logging into an employer portal (apply_type ==
-'external') are never shown or applied to — they are counted and reported so the
-user knows why they were hidden.
+All matching jobs are visible. Jobs requiring an employer-portal login are
+clearly marked as manual-only and cannot be submitted through JobQuest.
 """
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
@@ -64,8 +62,9 @@ def matches(q: str | None = None, min_score: float = 0.0, country: str | None = 
     for application in applications:
         by_job.setdefault(application.job_id, []).append(application)
 
-    # Only directly-applyable (form) jobs are ever considered.
-    query = db.query(Job).filter(Job.apply_type == APPLYABLE)
+    # Show both directly-applyable and manual-only jobs so users can open the
+    # original listing. Application services still restrict submissions to forms.
+    query = db.query(Job)
     if country and country != "all":
         query = query.filter(Job.country == country)
     if source and source != "all":
@@ -83,6 +82,15 @@ def matches(q: str | None = None, min_score: float = 0.0, country: str | None = 
         data["matched_skills"] = res["matched_skills"]
         data["missing_skills"] = res["missing_skills"]
         attempts = by_job.get(job.id, [])
+        data["can_auto_apply"] = job.apply_type == APPLYABLE
+        data["application_method"] = (
+            "automatic" if job.apply_type == APPLYABLE else "manual"
+        )
+        data["apply_message"] = (
+            "" if job.apply_type == APPLYABLE
+            else "This job requires an employer-portal account. JobQuest cannot "
+                 "submit it automatically; open the job link and apply on the employer's website."
+        )
         data["can_retry"] = bool(attempts) and all(a.can_retry for a in attempts)
         data["already_applied"] = bool(attempts) and not data["can_retry"]
         data["application_status"] = attempts[-1].effective_status if attempts else None
