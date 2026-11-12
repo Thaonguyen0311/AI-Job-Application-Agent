@@ -264,13 +264,17 @@ def test_jobs_meta_reports_sources_countries_and_hidden():
     assert len(m["countries"]) >= 3
 
 
-def test_matches_only_returns_form_jobs():
+def test_matches_include_form_and_manual_only_jobs():
     tok = _token("form_user", "secret123")
     h = {"Authorization": f"Bearer {tok}"}
     client.put("/api/profile", json={"full_name": "Form", "skills": ["Python", "SQL"]}, headers=h)
     jobs = client.get("/api/jobs/matches", headers=h).json()
-    assert len(jobs) >= 8
-    assert all(j["apply_type"] == "form" for j in jobs)     # never a login-required job
+    assert len(jobs) >= 10
+    assert any(j["apply_type"] == "form" and j["can_auto_apply"] for j in jobs)
+    manual = [j for j in jobs if j["apply_type"] == "external"]
+    assert len(manual) == 2
+    assert all(not j["can_auto_apply"] and j["application_method"] == "manual" for j in manual)
+    assert all(j["apply_message"] and j["url"].startswith("https://") for j in manual)
     assert all("source" in j and "country" in j for j in jobs)
 
 
