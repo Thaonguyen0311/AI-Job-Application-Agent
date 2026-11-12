@@ -586,10 +586,10 @@ function populateJobFilters(meta) {
 
 function renderJobsNote(meta, showing) {
   const sources = meta.sources.map(s => s.name).join(', ');
-  const manualCount = jobsCache.filter(j => !j.can_auto_apply).length;
+  const manualCount = meta.manual_required_count ?? meta.hidden_login_required ?? 0;
   $('#jobs-note').innerHTML =
     `Showing <b>${showing}</b> matching job${showing === 1 ? '' : 's'} from ${esc(sources)}. ` +
-    `<span class="hint">${manualCount} require manual application through an employer portal; JobQuest will not submit those automatically.</span>`;
+    (manualCount ? `<span class="hint">${manualCount} job${manualCount === 1 ? '' : 's'} in this feed require manual application through an employer portal; JobQuest will not submit them automatically.</span>` : '');
 }
 
 function srcClass(source) {
@@ -608,8 +608,13 @@ function renderJobs(jobs) {
     const c = el('div', 'job-card');
     const matched = j.matched_skills.map(s => `<span class="skill-tag match">${esc(s)}</span>`).join('');
     const missing = j.missing_skills.slice(0, 4).map(s => `<span class="skill-tag miss">${esc(s)}</span>`).join('');
-    const jobLink = j.url
-      ? `<a href="${esc(j.url)}" target="_blank" rel="noopener noreferrer">View original job posting ↗</a>`
+    let safeJobUrl = '';
+    try {
+      const parsedUrl = new URL(j.url);
+      if (parsedUrl.protocol === 'https:' || parsedUrl.protocol === 'http:') safeJobUrl = parsedUrl.href;
+    } catch (_) { /* Invalid or missing listing URL: do not render a link. */ }
+    const jobLink = safeJobUrl
+      ? `<a href="${esc(safeJobUrl)}" target="_blank" rel="noopener noreferrer">View original job posting ↗</a>`
       : '<span class="hint">Original job link unavailable</span>';
     const action = !j.can_auto_apply
       ? `<div class="manual-apply-notice"><b>Manual application required</b><div>${esc(j.apply_message || 'Apply through the employer portal; automatic submission is unavailable.')}</div></div>`
