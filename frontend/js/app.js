@@ -22,7 +22,22 @@ function toast(msg, kind = '') {
   setTimeout(() => t.remove(), 3000);
 }
 
-async function api(path, { method = 'GET', body, auth = true, form = false } = {}) {
+const pendingReads = new Map();
+
+function api(path, options = {}) {
+  const { method = 'GET', body, auth = true } = options;
+  if (method !== 'GET' && !(method === 'POST' && path === '/cv/preview')) {
+    return sendApiRequest(path, options);
+  }
+  const key = JSON.stringify([auth, state.token, method, path, options.form ?? false, body, options.fresh ?? false]);
+  if (!pendingReads.has(key)) {
+    const request = sendApiRequest(path, options).finally(() => pendingReads.delete(key));
+    pendingReads.set(key, request);
+  }
+  return pendingReads.get(key);
+}
+
+async function sendApiRequest(path, { method = 'GET', body, auth = true, form = false } = {}) {
   const requestToken = state.token;
   const headers = {};
   if (auth && state.token) headers['Authorization'] = 'Bearer ' + state.token;
@@ -975,7 +990,10 @@ function collectRepeats(listId, isExp) {
   }).filter(x => (x.title || x.name));
 }
 
+let profileSavePending = false;
+
 async function saveProfile() {
+  if (profileSavePending) return;
   const body = {
     full_name: $('#pf-full_name').value, email: $('#pf-email').value, phone: $('#pf-phone').value,
     location: $('#pf-location').value, linkedin: $('#pf-linkedin').value, github: $('#pf-github').value,
@@ -986,18 +1004,21 @@ async function saveProfile() {
     preferred_roles: readTags('tg-preferred_roles'), preferred_locations: readTags('tg-preferred_locations'),
     experience: collectRepeats('exp-list', true), projects: collectRepeats('proj-list', false),
   };
+  const buttons = [$('#btn-save-profile'), $('#btn-save-profile-2')];
+  profileSavePending = true;
+  buttons.forEach(button => { button.disabled = true; });
   try {
-   state.profile = await api('/profile', {
-  method: 'PUT',
-  body
-});
-
-pageCache.profile = state.profile;
-pageCache.completeness = null;
-
-updateCompleteness(true);
+    state.profile = await api('/profile', { method: 'PUT', body });
+    pageCache.profile = state.profile;
+    pageCache.completeness = null;
+    await updateCompleteness(true);
     toast('Profile saved ✓', 'ok');
-  } catch (e) { toast(e.message, 'err'); }
+  } catch (e) {
+    toast(e.message, 'err');
+  } finally {
+    profileSavePending = false;
+    buttons.forEach(button => { button.disabled = false; });
+  }
 }
 $('#btn-save-profile').onclick = saveProfile;
 $('#btn-save-profile-2').onclick = saveProfile;
@@ -1011,7 +1032,7 @@ async function updateCompleteness(force = false) {
     if (!force && pageCache.completeness) {
       c = pageCache.completeness;
     } else {
-      c = await api('/profile/completeness');
+      c = await api('/profile/completeness', { fresh: force });
       pageCache.completeness = c;
     }
 
