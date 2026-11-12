@@ -33,20 +33,22 @@ def refresh(user: User = Depends(get_current_user), db: Session = Depends(get_db
 
 @router.get("/meta")
 def meta(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Sources, countries and how many jobs were hidden for requiring a login."""
+    """Sources, countries and applyability counts for the current job feed."""
     _ensure_jobs(db)
     jobs = db.query(Job).all()
     form_jobs = [j for j in jobs if j.apply_type == APPLYABLE]
     sources = {}
-    for j in form_jobs:
+    for j in jobs:
         sources[j.source] = sources.get(j.source, 0) + 1
-    countries = sorted({j.country for j in form_jobs if j.country})
-    hidden = sum(1 for j in jobs if j.apply_type != APPLYABLE)
+    countries = sorted({j.country for j in jobs if j.country})
+    manual_required = sum(1 for j in jobs if j.apply_type != APPLYABLE)
     return {
         "sources": [{"name": k, "count": v} for k, v in sorted(sources.items())],
         "countries": countries,
         "applyable_count": len(form_jobs),
-        "hidden_login_required": hidden,
+        "manual_required_count": manual_required,
+        # Keep the legacy key for existing clients; these jobs are now visible.
+        "hidden_login_required": manual_required,
     }
 
 
