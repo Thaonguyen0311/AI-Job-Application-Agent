@@ -89,6 +89,9 @@ class JobMatchOut(JobOut):
     already_applied: bool = False
     application_status: Optional[str] = None
     can_retry: bool = False
+    can_auto_apply: bool = True
+    application_method: str = "automatic"
+    apply_message: str = ""
 
 
 # ---------- Applications ----------
