@@ -293,7 +293,7 @@ const TOUR_STEPS = [
     body: "Narrow the list by country, source (LinkedIn, Indeed, company sites), and minimum match score." },
   { page: "jobs", target: "#jobs-note",
     title: "4. Only jobs you can actually apply to",
-    body: "JobQuest shows jobs with a direct application form. Jobs needing an employer-portal login are hidden and never auto-applied to — the count is shown here." },
+    body: "JobQuest shows matching jobs, including those that require an employer-portal login. Manual-only jobs show a clear status and a link to the original posting; JobQuest never auto-applies to them." },
   { page: "jobs", target: ".job-card", scrollTo: true,
     title: "5. Read a job card",
     body: "Each card shows the source badge, the country, the skills you match, and your personal match score in the ring." },
