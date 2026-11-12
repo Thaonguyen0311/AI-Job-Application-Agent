@@ -6,8 +6,8 @@ Each job carries:
   * country     -> used by the country filter and country-scoped autopilot
   * apply_type  -> "form"     : direct form submission — JobQuest CAN auto-apply
                    "external" : requires logging into an employer portal —
-                                JobQuest will NOT apply and hides these from the
-                                job list (see jobs router).
+                                shown with a manual-only status and original link;
+                                JobQuest will NOT submit these jobs.
 """
 
 SEED_JOBS = [
