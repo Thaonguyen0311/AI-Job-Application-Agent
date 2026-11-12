@@ -584,12 +584,30 @@ function populateJobFilters(meta) {
   }
 }
 
+function updateBoardSearchLinks() {
+  const query = $('#job-search').value.trim();
+  const country = $('#job-country').value;
+  const location = country && country !== 'all' ? country : '';
+  const terms = [query, location].filter(Boolean).join(' ');
+  const linkedin = $('#board-linkedin');
+  const indeed = $('#board-indeed');
+  const duunitori = $('#board-duunitori');
+  linkedin.href = terms
+    ? `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(query)}${location ? `&location=${encodeURIComponent(location)}` : ''}`
+    : 'https://www.linkedin.com/jobs/';
+  indeed.href = terms
+    ? `https://www.indeed.com/jobs?q=${encodeURIComponent(query)}${location ? `&l=${encodeURIComponent(location)}` : ''}`
+    : 'https://www.indeed.com/jobs';
+  duunitori.href = terms
+    ? `https://duunitori.fi/tyopaikat?haku=${encodeURIComponent(terms)}`
+    : 'https://duunitori.fi/tyopaikat';
+}
 function renderJobsNote(meta, showing) {
   const sources = meta.sources.map(s => s.name).join(', ');
   const manualCount = meta.manual_required_count ?? meta.hidden_login_required ?? 0;
   $('#jobs-note').innerHTML =
     `Showing <b>${showing}</b> matching job${showing === 1 ? '' : 's'} from ${esc(sources)}. ` +
-    (manualCount ? `<span class="hint">${manualCount} job${manualCount === 1 ? '' : 's'} in this feed require manual application through an employer portal; JobQuest will not submit them automatically.</span>` : '');
+    (manualCount ? `<span class="hint">${manualCount} job${manualCount === 1 ? '' : 's'} in this feed require manual application on an external employer site; JobQuest will not submit them automatically.</span>` : '');
 }
 
 function srcClass(source) {
@@ -628,7 +646,7 @@ function renderJobs(jobs) {
     c.innerHTML = `
       <div class="ring-score big ${ringClass(j.match_score)}" style="--p:0" data-p="${j.match_score}"><span>${Math.round(j.match_score)}</span></div>
       <div class="job-main">
-        <div class="job-title">${esc(j.title)}</div>
+        <div class="job-title">${safeJobUrl ? `<a class="job-title-link" href="${esc(safeJobUrl)}" target="_blank" rel="noopener noreferrer">${esc(j.title)}</a>` : esc(j.title)}</div>
         <div class="job-meta"><span class="src-badge ${srcClass(j.source)}">${esc(j.source)}</span> · ${esc(j.company)} ${j.remote ? '' : ` · <span class="country">${esc(j.country || j.location)}</span>`} ${j.remote ? '<span class="tag-remote">Remote</span>' : ''} ${j.requires_cover_letter ? '· <span class="badge-cover">✍ cover letter</span>' : ''}</div>
         <div class="job-skills">${matched}${missing}</div>
         <div class="job-link">${jobLink}</div>
@@ -642,15 +660,16 @@ function renderJobs(jobs) {
 }
 
 let searchTimer;
-$('#job-search').oninput = () => { clearTimeout(searchTimer); searchTimer = setTimeout(loadJobs, 300); };
+$('#job-search').oninput = () => { updateBoardSearchLinks(); clearTimeout(searchTimer); searchTimer = setTimeout(loadJobs, 300); };
 $('#job-minscore').onchange = loadJobs;
-$('#job-country').onchange = loadJobs;
+$('#job-country').onchange = () => { updateBoardSearchLinks(); loadJobs(); };
 $('#job-source').onchange = loadJobs;
 $('#btn-refresh-jobs').onclick = async () => {
-  try { const d = await api('/jobs/refresh', { method: 'POST' }); jobMeta = null; toast(`Feed refreshed · ${d.total_applyable} jobs available`, 'ok'); loadJobs(); }
+  try { const d = await api('/jobs/refresh', { method: 'POST' }); jobMeta = null; toast(`Feed refreshed · ${d.total_jobs ?? d.total_applyable} jobs available`, 'ok'); loadJobs(); }
   catch (e) { toast(e.message, 'err'); }
 };
 $('#btn-auto-open').onclick = () => openAutoApply();
+updateBoardSearchLinks();
 
 /* ---------- Review & apply modal (manual) ---------- */
 async function openApplyReview(jobId, applicationJob = null) {

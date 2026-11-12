@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from ..agents.job_scorer import score_job
 from ..agents.preference_learner import compute_boosts
 from ..auth import get_current_user
+from ..config import settings
 from ..database import get_db
 from ..models import Application, Job, User
 from ..schemas import JobMatchOut, JobOut
@@ -19,23 +20,33 @@ router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 APPLYABLE = "form"
 
 
+def _feed_query(db: Session):
+    query = db.query(Job)
+    # The persistent Docker volume may contain old sample rows. Keep those out
+    # of the live feed without deleting historical jobs or application records.
+    if settings.job_source == "live":
+        query = query.filter(Job.external_id.like("arbeitnow-%"))
+    return query
+
+
 def _ensure_jobs(db: Session):
-    if db.query(Job).count() == 0:
+    if _feed_query(db).count() == 0:
         _ingest(db)
 
 
 @router.post("/refresh")
 def refresh(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     added = _ingest(db)
-    total = db.query(Job).filter(Job.apply_type == APPLYABLE).count()
-    return {"added": added, "total_applyable": total}
+    total = _feed_query(db).count()
+    applyable = _feed_query(db).filter(Job.apply_type == APPLYABLE).count()
+    return {"added": added, "total_jobs": total, "total_applyable": applyable}
 
 
 @router.get("/meta")
 def meta(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Sources, countries and applyability counts for the current job feed."""
     _ensure_jobs(db)
-    jobs = db.query(Job).all()
+    jobs = _feed_query(db).all()
     form_jobs = [j for j in jobs if j.apply_type == APPLYABLE]
     sources = {}
     for j in jobs:
@@ -47,6 +58,7 @@ def meta(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
         "countries": countries,
         "applyable_count": len(form_jobs),
         "manual_required_count": manual_required,
+        "total_jobs": len(jobs),
         # Keep the legacy key for existing clients; these jobs are now visible.
         "hidden_login_required": manual_required,
     }
@@ -64,9 +76,8 @@ def matches(q: str | None = None, min_score: float = 0.0, country: str | None = 
     for application in applications:
         by_job.setdefault(application.job_id, []).append(application)
 
-    # Show both directly-applyable and manual-only jobs so users can open the
-    # original listing. Application services still restrict submissions to forms.
-    query = db.query(Job)
+    # Show directly applyable and manual-only jobs with the original listing link.
+    query = _feed_query(db)
     if country and country != "all":
         query = query.filter(Job.country == country)
     if source and source != "all":
@@ -85,13 +96,11 @@ def matches(q: str | None = None, min_score: float = 0.0, country: str | None = 
         data["missing_skills"] = res["missing_skills"]
         attempts = by_job.get(job.id, [])
         data["can_auto_apply"] = job.apply_type == APPLYABLE
-        data["application_method"] = (
-            "automatic" if job.apply_type == APPLYABLE else "manual"
-        )
+        data["application_method"] = "automatic" if job.apply_type == APPLYABLE else "manual"
         data["apply_message"] = (
             "" if job.apply_type == APPLYABLE
-            else "This job requires an employer-portal account. JobQuest cannot "
-                 "submit it automatically; open the job link and apply on the employer's website."
+            else "This job is hosted on an external employer application page. JobQuest cannot "
+                 "verify or submit its form; open the job link and apply on the employer's website."
         )
         data["can_retry"] = bool(attempts) and all(a.can_retry for a in attempts)
         data["already_applied"] = bool(attempts) and not data["can_retry"]

@@ -208,23 +208,30 @@ textarea.input { resize: vertical; min-height: 84px; }
 /* ---------- Jobs list ---------- */
 .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
 .toolbar .input { max-width: 280px; }
+.board-searches { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: -4px 0 12px; font-size: 13px; }
+.board-searches > span { color: var(--muted); font-weight: 600; }
+.board-searches a { color: var(--violet-deep); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+.board-searches a:hover { color: var(--violet); }
+.board-searches small { color: var(--muted); }
 .job-list { display: flex; flex-direction: column; gap: 12px; }
-.job-card { display: flex; gap: 16px; align-items: center; background: var(--surface);
+.job-card { display: grid; grid-template-columns: 64px minmax(0, 1fr) minmax(220px, 260px); gap: 16px; align-items: center; background: var(--surface);
   border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; transition: border-color .15s, box-shadow .2s; }
 .job-card:hover { border-color: #d6d2ee; box-shadow: var(--shadow-sm); }
-.job-main { flex: 1; min-width: 0; }
+.job-main { min-width: 0; }
 .job-title { font-family: var(--font-display); font-weight: 700; font-size: 16px; }
+.job-title-link { color: var(--violet-deep); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.job-title-link:hover { color: var(--violet); text-decoration-color: currentColor; }
 .job-meta { font-size: 13px; color: var(--muted); margin: 3px 0 8px; }
 .job-skills { display: flex; flex-wrap: wrap; gap: 6px; }
 .job-link { margin-top: 9px; font-size: 13px; }
 .job-link a { color: var(--violet); font-weight: 600; text-decoration: none; }
 .job-link a:hover { text-decoration: underline; }
-.manual-apply-notice { max-width: 245px; color: var(--st-in_review, #9A6700); font-size: 12px; line-height: 1.45; text-align: right; }
+.manual-apply-notice { width: 100%; max-width: 245px; color: var(--st-in_review, #9A6700); font-size: 12px; line-height: 1.45; text-align: left; overflow-wrap: anywhere; }
 .manual-apply-notice b { display: block; margin-bottom: 3px; }
 .skill-tag { font-size: 12px; padding: 3px 9px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--line); }
 .skill-tag.match { background: #F2FBD6; border-color: #E1F0B0; color: #4d6111; }
 .skill-tag.miss { color: var(--muted); }
-.job-actions { display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+.job-actions { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; min-width: 0; }
 .badge-cover { font-size: 11px; color: var(--st-in_review); font-weight: 600; }
 .tag-remote { font-size: 11px; background: #E4F7E9; color: #167a3d; padding: 2px 8px; border-radius: 6px; font-weight: 600; }
 
@@ -386,7 +393,9 @@ textarea.input { resize: vertical; min-height: 84px; }
   .main { padding: 18px 16px 80px; }
   .stat-grid { grid-template-columns: 1fr 1fr; }
   .grid-2, .grid-2-13, .profile-grid { grid-template-columns: 1fr; }
-  .job-card { flex-wrap: wrap; }
+  .job-card { grid-template-columns: 56px minmax(0, 1fr); align-items: start; }
+  .job-actions { grid-column: 2; }
+  .manual-apply-notice { max-width: 100%; }
   .scrim { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 35; display: none; }
   .scrim.show { display: block; }
   .app-table { display: block; overflow-x: auto; white-space: nowrap; }

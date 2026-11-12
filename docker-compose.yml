@@ -7,12 +7,12 @@ services:
       SECRET_KEY: ${SECRET_KEY:?Set a unique SECRET_KEY in the root .env file}
       DATABASE_URL: "sqlite:////data/jobquest.db"
       APPLY_MODE: "demo"        # demo | live
-      JOB_SOURCE: "seed"        # seed | live
-      AI_PROVIDER: ${AI_PROVIDER:-ollama}
+      JOB_SOURCE: "live"         # live Arbeitnow feed | seed sample data
+      AI_PROVIDER: ${AI_PROVIDER:-gemini}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:3b}
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
-      # GEMINI_MODEL: "gemini-2.0-flash"
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.0-flash}
     volumes:
       - jobquest-data:/data
     expose:

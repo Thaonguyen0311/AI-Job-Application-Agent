@@ -1,31 +1,38 @@
-"""
-Job ingestion.
-
-Two modes (config.job_source):
-  * "seed"  -> returns the built-in sample feed. Deterministic, offline, testable.
-  * "live"  -> uses Playwright to scrape a real listings page. Requires the
-               Playwright browser binaries (`playwright install chromium`) and
-               network access. Kept generic; adapt selectors per target board.
-
-Scraping third-party sites can violate their Terms of Service. Only enable
-"live" against sources you are permitted to scrape.
-"""
+"""Job ingestion from the seed fixture or Arbeitnow's public job API."""
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from html.parser import HTMLParser
 import logging
+import re
+
+import httpx
 
 from ..config import settings
 from .seed_jobs import SEED_JOBS
 
 log = logging.getLogger("jobquest.scraper")
+ARBEITNOW_URL = "https://www.arbeitnow.com/api/job-board-api"
+
+
+class _TextOnly(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.parts: list[str] = []
+
+    def handle_data(self, data: str):
+        self.parts.append(data)
+
+
+def _plain_text(value: str) -> str:
+    parser = _TextOnly()
+    parser.feed(value or "")
+    return re.sub(r"\s+", " ", " ".join(parser.parts)).strip()
 
 
 def fetch_jobs(query: str | None = None) -> list[dict]:
     if settings.job_source == "live":
-        try:
-            return _fetch_live(query)
-        except Exception as exc:  # pragma: no cover - needs browser + network
-            log.warning("Live scrape failed, using seed feed: %s", exc)
+        return _fetch_arbeitnow(query)
     return _filter(SEED_JOBS, query)
 
 
@@ -39,28 +46,45 @@ def _filter(jobs: list[dict], query: str | None) -> list[dict]:
             or any(q in s.lower() for s in j.get("skills", []))]
 
 
-def _fetch_live(query: str | None) -> list[dict]:  # pragma: no cover
-    """Example Playwright scraper. Replace selectors for your target board."""
-    from playwright.sync_api import sync_playwright
-
-    results: list[dict] = []
-    with sync_playwright() as pw:
-        browser = pw.chromium.launch(headless=True)
-        page = browser.new_page()
-        # Example only. Point this at a board you are allowed to scrape.
-        url = f"https://example-jobs.invalid/search?q={query or 'intern'}"
-        page.goto(url, timeout=30000)
-        cards = page.query_selector_all(".job-card")
-        for i, card in enumerate(cards):
-            title = card.query_selector(".title")
-            company = card.query_selector(".company")
-            results.append({
-                "external_id": f"live-{i}",
-                "title": title.inner_text() if title else "Unknown",
-                "company": company.inner_text() if company else "",
-                "location": "", "remote": False,
-                "url": url, "skills": [], "requires_cover_letter": False,
-                "description": card.inner_text(),
-            })
-        browser.close()
-    return results or _filter(SEED_JOBS, query)
+def _fetch_arbeitnow(query: str | None) -> list[dict]:
+    """Fetch current listings and mark external applications as manual-only."""
+    response = httpx.get(ARBEITNOW_URL, params={"page": 1}, timeout=20.0,
+                         headers={"User-Agent": "JobQuest/1.0 (job feed integration)"})
+    response.raise_for_status()
+    payload = response.json()
+    jobs = payload.get("data", []) if isinstance(payload, dict) else []
+    results = []
+    for item in jobs:
+        url = item.get("url", "")
+        if not url.startswith(("https://", "http://")):
+            continue
+        title = item.get("title") or "Untitled role"
+        company = item.get("company_name") or ""
+        tags = item.get("tags") or []
+        description = _plain_text(item.get("description") or "")
+        searchable = " ".join((title, company, description, *tags))
+        if query and query.casefold() not in searchable.casefold():
+            continue
+        created = item.get("created_at")
+        posted = None
+        if isinstance(created, (int, float)):
+            posted = datetime.fromtimestamp(created, tz=timezone.utc).replace(tzinfo=None)
+        location = item.get("location") or ""
+        results.append({
+            "external_id": f"arbeitnow-{item.get('slug') or url}",
+            "title": title,
+            "company": company,
+            "location": location,
+            "country": location.rsplit(",", 1)[-1].strip() if "," in location else location,
+            "remote": bool(item.get("remote", False)),
+            "url": url,
+            "description": description,
+            "skills": tags,
+            "requires_cover_letter": False,
+            # Arbeitnow links to external ATS application pages. We cannot
+            # verify a direct, authenticated form, so never auto-submit these.
+            "apply_type": "external",
+            "source": "Arbeitnow",
+            "posted_at": posted,
+        })
+    return results

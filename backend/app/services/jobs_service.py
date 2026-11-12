@@ -20,7 +20,7 @@ def ingest(db: Session, query: str | None = None) -> int:
             description=j.get("description", ""), skills=j.get("skills", []),
             requires_cover_letter=j.get("requires_cover_letter", False),
             apply_type=j.get("apply_type", "form"),
-            source=j.get("source", "seed"), posted_at=datetime.utcnow(),
+            source=j.get("source", "seed"), posted_at=j.get("posted_at") or datetime.utcnow(),
         ))
         added += 1
     db.commit()
